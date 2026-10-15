@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Análise PNR</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head><body><main>
+<div class="top"><h1>Análise PNR</h1><button id="theme"></button></div>
+<p class="sub">Suba as duas planilhas. O site refaz o seu tutorial (filtro de status, PROCX da rota no BSC, bases BRN/Null/ND) e monta os gráficos da Análise PNR.</p>
+
+<div class="drops">
+<label class="drop" id="d1"><b>1 · LOGISTICS_PNR (.csv)</b><span id="s1">clique ou arraste aqui</span><input type="file" accept=".csv" hidden id="f1"></label>
+<label class="drop" id="d2"><b>2 · SRM BSC Delivery Success (.csv)</b><span id="s2">clique ou arraste aqui</span><input type="file" accept=".csv" hidden id="f2"></label>
+</div>
+<div id="info" class="msg"></div>
+
+<div id="app" hidden>
+<div id="resumo"></div>
+<div class="filters">
+<div><small>Status</small><div id="fStatus" class="seg"></div></div>
+<div><small>Tipo de base</small><div id="fTipo" class="seg"></div></div>
+<div><small>Data do caso</small><select id="fData"></select></div>
+<span class="sp"></span>
+<button id="bShot">📷 Baixar print</button><button id="bCopy">📋 Copiar print</button>
+</div>
+<div id="panel"></div>
+</div>
+</main>
+<div id="modal" hidden><div class="mbox"><div class="mbar"><button id="mShot">📷 Baixar print</button><button id="mCopy">📋 Copiar print</button><button id="mClose">Fechar ✕</button></div><div id="dpanel"></div></div></div>
+<script src="script.js"></script>
+</body></html>
