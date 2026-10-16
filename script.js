@@ -6,9 +6,9 @@ const brl = v => v.toLocaleString("pt-BR", {style: "currency", currency: "BRL"})
 const ddmm = d => d.split("-").reverse().join("/");
 const isXPT = b => (b || "").toString().trim().toUpperCase().startsWith("E");
 const regionBases = {
-  "ESPÍRITO SANTO": { xpt: ["ES"], svc: ["SES"] },
+  "ESPÍRITO SANTO": { xpt: ["EES"], svc: ["SES"] },
   "MINAS GERAIS": { xpt: ["EMG"], svc: ["SMG"] },
-  "NORDESTE": { xpt: [], svc: ["SBA"] },
+  "NORDESTE": { xpt: ["EBA"], svc: ["SBA"] },
   "RIO DE JANEIRO": { xpt: ["ERJ"], svc: ["SRJ"] },
   "SÃO PAULO": { xpt: [], svc: ["SSP"] }
 };
@@ -21,17 +21,13 @@ const regionForBase = base => {
   const b = norm(base);
   return Object.keys(regionBases).find(r => [...regionBases[r].xpt, ...regionBases[r].svc].some(code => b === norm(code) || b.startsWith(norm(code)))) || "";
 };
-const rowBases = r => [...new Set([r.xpt, r.svc, r.base].filter(b => !vazio(b)))];
-const rowHasXPT = r => rowBases(r).some(b => isXPT(b));
-const rowHasSVC = r => rowBases(r).some(b => !isXPT(b));
-const basesForRow = r => tipo === "XPT" ? rowBases(r).filter(isXPT) : tipo === "SVC" ? rowBases(r).filter(b => !isXPT(b)) : rowBases(r);
+// Cada caso tem UMA base só (igual à planilha Análise PNR): o tipo (XPT/SVC) vem dela.
+const rowBases = r => [r.base];
+const rowHasXPT = r => isXPT(r.base);
+const rowHasSVC = r => !isXPT(r.base);
+const basesForRow = r => [r.base];
 const matchesRegional = r => regional === "TODAS" || basesForRow(r).some(b => regionForBase(b) === regional);
-const displayBase = r => {
-  const candidates = rowBases(r);
-  if (tipo === "XPT") return candidates.find(isXPT) || r.base;
-  if (tipo === "SVC") return candidates.find(b => !isXPT(b)) || r.base;
-  return r.base;
-};
+const displayBase = r => r.base;
 const field = (r, names) => {
   const norm = s => (s || "").replace(/^\uFEFF/, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const wanted = names.map(norm), keys = Object.keys(r || {});
@@ -93,7 +89,8 @@ function build() {
     const hit = mp.get(routeKey(rota)), x = hit?.xpt || "", svc = hit?.svc || "";
     const ok = !!hit;
     if (ok) achou++;
-    const base = !vazio(x) ? x : (!vazio(svc) ? svc : orig);
+    // XPT da rota na BSC; se for null / ND / BRN (ou não achar a rota), usa a estação de origem. Base BRN nunca aparece.
+    const base = !vazio(x) ? x : (!vazio(orig) ? orig : svc);
     const reg = regionForBase(base);
     rows.push({
       data: field(r, ["DATA DO CASO"]).slice(0, 10), status: st, id: field(r, ["ID DE ENVIO"]),
