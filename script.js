@@ -6,11 +6,11 @@ const brl = v => v.toLocaleString("pt-BR", {style: "currency", currency: "BRL"})
 const ddmm = d => d.split("-").reverse().join("/");
 const isXPT = b => b.toUpperCase().startsWith("E");
 const regionBases = {
-  "ESPÍRITO SANTO": ["ES", "SES"],
-  "MINAS GERAIS": ["EMG", "SMG"],
-  "NORDESTE": ["SBA"],
-  "RIO DE JANEIRO": ["ERJ", "SRJ"],
-  "SÃO PAULO": ["SSP"]
+  "ESPÍRITO SANTO": { xpt: ["ES"], svc: ["SES"] },
+  "MINAS GERAIS": { xpt: ["EMG"], svc: ["SMG"] },
+  "NORDESTE": { xpt: [], svc: ["SBA"] },
+  "RIO DE JANEIRO": { xpt: ["ERJ"], svc: ["SRJ"] },
+  "SÃO PAULO": { xpt: [], svc: ["SSP"] }
 };
 const regionName = value => {
   const norm = s => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
@@ -19,13 +19,18 @@ const regionName = value => {
 const regionForBase = base => {
   const norm = s => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const b = norm(base);
-  return Object.keys(regionBases).find(r => regionBases[r].some(code => b === norm(code) || b.startsWith(norm(code))) ) || "";
+  return Object.keys(regionBases).find(r => [...regionBases[r].xpt, ...regionBases[r].svc].some(code => b === norm(code) || b.startsWith(norm(code)))) || "";
 };
-const basesForRow = r => tipo === "XPT" ? [r.xpt] : tipo === "SVC" ? [r.svc] : [r.xpt, r.svc, r.base];
+const rowBases = r => [...new Set([r.xpt, r.svc, r.base].filter(b => !vazio(b)))];
+const rowHasXPT = r => rowBases(r).some(b => isXPT(b));
+const rowHasSVC = r => rowBases(r).some(b => !isXPT(b));
+const basesForRow = r => tipo === "XPT" ? rowBases(r).filter(isXPT) : tipo === "SVC" ? rowBases(r).filter(b => !isXPT(b)) : rowBases(r);
 const matchesRegional = r => regional === "TODAS" || basesForRow(r).some(b => regionForBase(b) === regional);
 const displayBase = r => {
-  const candidate = tipo === "XPT" ? r.xpt : tipo === "SVC" ? r.svc : r.base;
-  return !vazio(candidate) ? candidate : r.base;
+  const candidates = rowBases(r);
+  if (tipo === "XPT") return candidates.find(isXPT) || r.base;
+  if (tipo === "SVC") return candidates.find(b => !isXPT(b)) || r.base;
+  return r.base;
 };
 const field = (r, names) => {
   const norm = s => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -160,7 +165,7 @@ function vbar(id, keys, vals, colors, texts) {
 function render() {
   charts.forEach(c => c.destroy()); charts = [];
   const byTipo = r => r.status === cur && matchesRegional(r) &&
-    (tipo === "TODOS" || (tipo === "XPT" ? !vazio(r.xpt) : !vazio(r.svc)));
+    (tipo === "TODOS" || (tipo === "XPT" ? rowHasXPT(r) : rowHasSVC(r)));
   const list = rows.filter(r => byTipo(r) && (data === "TUDO" || r.data === data)).map(r => ({...r, base: displayBase(r)}));
   const tot = list.reduce((t, r) => t + r.valor, 0);
   const P = $("#panel");
@@ -191,7 +196,7 @@ function render() {
 }
 function openDetail(base) {
   const items = rows.filter(r => displayBase(r) === base && matchesRegional(r) &&
-    (tipo === "TODOS" || (tipo === "XPT" ? !vazio(r.xpt) : !vazio(r.svc))) && (data === "TUDO" || r.data === data));
+    (tipo === "TODOS" || (tipo === "XPT" ? rowHasXPT(r) : rowHasSVC(r))) && (data === "TUDO" || r.data === data));
   const tb = (s, cor) => {
     const l = items.filter(r => r.status === s).sort((a, b) => b.valor - a.valor);
     return `<div class="card"><table class="xl d"><tr><th style="background:${cor}">DATA</th><th style="background:${cor}">STATUS</th><th style="background:${cor}">ID DA PNR</th><th style="background:${cor}">QTD</th><th style="background:${cor}">VALOR DAS PNR</th></tr>` +
