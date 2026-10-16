@@ -1,7 +1,7 @@
 const $ = s => document.querySelector(s);
 const ST = ["Com penalidade", "Aguardando comprovante"];
 let pnr = null, bsc = null, rows = [], total = 0, statusAll = {};
-let cur = ST[0], tipo = "TODOS", data = "TUDO", regional = "TODAS", baseSel = "TODAS", charts = [];
+let cur = ST[0], tipo = "TODOS", data = "TUDO", regional = "TODAS", charts = [];
 const brl = v => v.toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
 const ddmm = d => d.split("-").reverse().join("/");
 const isXPT = b => b.toUpperCase().startsWith("E");
@@ -17,8 +17,15 @@ const regionName = value => {
   return Object.keys(regionBases).find(r => norm(r) === norm(value)) || "";
 };
 const regionForBase = base => {
-  const b = (base || "").toUpperCase().trim();
-  return Object.keys(regionBases).find(r => regionBases[r].includes(b)) || "";
+  const norm = s => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const b = norm(base);
+  return Object.keys(regionBases).find(r => regionBases[r].some(code => b === norm(code) || b.startsWith(norm(code))) ) || "";
+};
+const basesForRow = r => tipo === "XPT" ? [r.xpt] : tipo === "SVC" ? [r.svc] : [r.xpt, r.svc, r.base];
+const matchesRegional = r => regional === "TODAS" || basesForRow(r).some(b => regionForBase(b) === regional);
+const displayBase = r => {
+  const candidate = tipo === "XPT" ? r.xpt : tipo === "SVC" ? r.svc : r.base;
+  return !vazio(candidate) ? candidate : r.base;
 };
 const field = (r, names) => {
   const norm = s => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -92,15 +99,7 @@ function build() {
   $("#fRegional").innerHTML = '<option value="TODAS">Todas as regionais</option>' + regs.map(r => `<option value="${r}">${r}</option>`).join("");
   regional = regs.includes(oldReg) ? oldReg : "TODAS";
   $("#fRegional").value = regional;
-  const updateBases = () => {
-    const options = [...new Set(rows.filter(r => regional === "TODAS" || regionForBase(r.base) === regional).map(r => r.base).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
-    baseSel = options.includes(baseSel) ? baseSel : "TODAS";
-    $("#fBase").innerHTML = '<option value="TODAS">Todas as bases</option>' + options.map(b => `<option value="${b}">${b}</option>`).join("");
-    $("#fBase").value = baseSel;
-  };
-  updateBases();
-  $("#fRegional").onchange = e => { regional = e.target.value; baseSel = "TODAS"; updateBases(); render(); };
-  $("#fBase").onchange = e => { baseSel = e.target.value; render(); };
+  $("#fRegional").onchange = e => { regional = e.target.value; render(); };
   const dts = [...new Set(rows.map(r => r.data))].sort().reverse();
   $("#fData").innerHTML = '<option value="TUDO">(Tudo)</option>' + dts.map(d => `<option value="${d}">${ddmm(d)}</option>`).join("");
   $("#fData").onchange = e => { data = e.target.value; render(); };
@@ -160,9 +159,9 @@ function vbar(id, keys, vals, colors, texts) {
 }
 function render() {
   charts.forEach(c => c.destroy()); charts = [];
-  const byTipo = r => r.status === cur && (tipo === "TODOS" || (tipo === "XPT") === isXPT(r.base)) &&
-    (regional === "TODAS" || regionForBase(r.base) === regional) && (baseSel === "TODAS" || r.base === baseSel);
-  const list = rows.filter(r => byTipo(r) && (data === "TUDO" || r.data === data));
+  const byTipo = r => r.status === cur && matchesRegional(r) &&
+    (tipo === "TODOS" || (tipo === "XPT" ? !vazio(r.xpt) : !vazio(r.svc)));
+  const list = rows.filter(r => byTipo(r) && (data === "TUDO" || r.data === data)).map(r => ({...r, base: displayBase(r)}));
   const tot = list.reduce((t, r) => t + r.valor, 0);
   const P = $("#panel");
   P.innerHTML = `<h2 class="ttl">${cur}</h2><p class="tsub">Tipo: ${tipo === "TODOS" ? "XPT + SVC" : tipo} · Data: ${data === "TUDO" ? "(Tudo)" : ddmm(data)} · ${list.length} casos · ${brl(tot)} em aberto</p>
@@ -191,8 +190,8 @@ function render() {
   vbar("#c4", ds, ds.map(d => D[d].v), ds.map(d => dv(D[d].v)), ds.map(d => "R$ " + Math.round(D[d].v).toLocaleString("pt-BR")));
 }
 function openDetail(base) {
-  const items = rows.filter(r => r.base === base && (tipo === "TODOS" || (tipo === "XPT") === isXPT(r.base)) &&
-    (regional === "TODAS" || regionForBase(r.base) === regional) && (baseSel === "TODAS" || r.base === baseSel) && (data === "TUDO" || r.data === data));
+  const items = rows.filter(r => displayBase(r) === base && matchesRegional(r) &&
+    (tipo === "TODOS" || (tipo === "XPT" ? !vazio(r.xpt) : !vazio(r.svc))) && (data === "TUDO" || r.data === data));
   const tb = (s, cor) => {
     const l = items.filter(r => r.status === s).sort((a, b) => b.valor - a.valor);
     return `<div class="card"><table class="xl d"><tr><th style="background:${cor}">DATA</th><th style="background:${cor}">STATUS</th><th style="background:${cor}">ID DA PNR</th><th style="background:${cor}">QTD</th><th style="background:${cor}">VALOR DAS PNR</th></tr>` +
