@@ -80,7 +80,7 @@ function build() {
     });
   }
   rows = []; statusAll = {}; total = pnr.length;
-  let achou = 0;
+  let achou = 0, brnFora = 0;
   for (const r of pnr) {
     const st = field(r, ["STATUS"]);
     statusAll[st] = (statusAll[st] || 0) + 1;
@@ -89,8 +89,14 @@ function build() {
     const hit = mp.get(routeKey(rota)), x = hit?.xpt || "", svc = hit?.svc || "";
     const ok = !!hit;
     if (ok) achou++;
-    // XPT da rota na BSC; se for null / ND / BRN (ou não achar a rota), usa a estação de origem. Base BRN nunca aparece.
-    const base = !vazio(x) ? x : (!vazio(orig) ? orig : svc);
+    // Mesma regra das colunas CHECK/BASES do Relatório da planilha da Luiza:
+    //  - rota não achada na BSC (ou sem SVC)  -> estação de origem do LOGISTICS
+    //  - XPT = null                          -> base SVC da BSC
+    //  - senão                               -> base XPT da BSC
+    const nulo = v => ["", "NULL"].includes((v || "").toString().trim().toUpperCase());
+    const base = (!hit || nulo(svc)) ? orig.trim() : (nulo(x) ? svc.trim() : x.trim());
+    // Na aba Análise da planilha as bases BRN ficam desmarcadas no filtro: esses casos não entram em nada.
+    if (/^BRN/i.test(base)) { brnFora++; continue; }
     const reg = regionForBase(base);
     rows.push({
       data: field(r, ["DATA DO CASO"]).slice(0, 10), status: st, id: field(r, ["ID DE ENVIO"]),
