@@ -5,6 +5,21 @@ let cur = ST[0], tipo = "TODOS", data = "TUDO", regional = "TODAS", baseSel = "T
 const brl = v => v.toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
 const ddmm = d => d.split("-").reverse().join("/");
 const isXPT = b => b.toUpperCase().startsWith("E");
+const regionBases = {
+  "ESPÍRITO SANTO": ["ES", "SES"],
+  "MINAS GERAIS": ["EMG", "SMG"],
+  "NORDESTE": ["SBA"],
+  "RIO DE JANEIRO": ["ERJ", "SRJ"],
+  "SÃO PAULO": ["SSP"]
+};
+const regionName = value => {
+  const norm = s => (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+  return Object.keys(regionBases).find(r => norm(r) === norm(value)) || "";
+};
+const regionForBase = base => {
+  const b = (base || "").toUpperCase().trim();
+  return Object.keys(regionBases).find(r => regionBases[r].includes(b)) || "";
+};
 const field = (r, names) => {
   const norm = s => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const wanted = names.map(norm), key = Object.keys(r || {}).find(k => wanted.includes(norm(k)) || wanted.some(n => norm(k).includes(n)));
@@ -65,20 +80,20 @@ function build() {
     const ok = !!hit;
     if (ok) achou++;
     const base = !vazio(x) ? x : (!vazio(svc) ? svc : orig);
-    const reg = getRegional(r) || hit?.regional || "";
+    const reg = regionForBase(base);
     rows.push({
       data: (r["DATA DO CASO"] || "").slice(0, 10), status: st, id: r["ID DE ENVIO"],
       valor: money(r["VALOR DA COMPRA"]),
       base, regional: reg, orig, rota, ok, xpt: x, svc
     });
   }
-  const regs = [...new Set(rows.map(r => r.regional).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const regs = Object.keys(regionBases);
   const oldReg = regional;
   $("#fRegional").innerHTML = '<option value="TODAS">Todas as regionais</option>' + regs.map(r => `<option value="${r}">${r}</option>`).join("");
   regional = regs.includes(oldReg) ? oldReg : "TODAS";
   $("#fRegional").value = regional;
   const updateBases = () => {
-    const options = [...new Set(rows.filter(r => regional === "TODAS" || r.regional === regional).map(r => r.base).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+    const options = [...new Set(rows.filter(r => regional === "TODAS" || regionForBase(r.base) === regional).map(r => r.base).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
     baseSel = options.includes(baseSel) ? baseSel : "TODAS";
     $("#fBase").innerHTML = '<option value="TODAS">Todas as bases</option>' + options.map(b => `<option value="${b}">${b}</option>`).join("");
     $("#fBase").value = baseSel;
@@ -146,7 +161,7 @@ function vbar(id, keys, vals, colors, texts) {
 function render() {
   charts.forEach(c => c.destroy()); charts = [];
   const byTipo = r => r.status === cur && (tipo === "TODOS" || (tipo === "XPT") === isXPT(r.base)) &&
-    (regional === "TODAS" || r.regional === regional) && (baseSel === "TODAS" || r.base === baseSel);
+    (regional === "TODAS" || regionForBase(r.base) === regional) && (baseSel === "TODAS" || r.base === baseSel);
   const list = rows.filter(r => byTipo(r) && (data === "TUDO" || r.data === data));
   const tot = list.reduce((t, r) => t + r.valor, 0);
   const P = $("#panel");
@@ -177,7 +192,7 @@ function render() {
 }
 function openDetail(base) {
   const items = rows.filter(r => r.base === base && (tipo === "TODOS" || (tipo === "XPT") === isXPT(r.base)) &&
-    (regional === "TODAS" || r.regional === regional) && (baseSel === "TODAS" || r.base === baseSel) && (data === "TUDO" || r.data === data));
+    (regional === "TODAS" || regionForBase(r.base) === regional) && (baseSel === "TODAS" || r.base === baseSel) && (data === "TUDO" || r.data === data));
   const tb = (s, cor) => {
     const l = items.filter(r => r.status === s).sort((a, b) => b.valor - a.valor);
     return `<div class="card"><table class="xl d"><tr><th style="background:${cor}">DATA</th><th style="background:${cor}">STATUS</th><th style="background:${cor}">ID DA PNR</th><th style="background:${cor}">QTD</th><th style="background:${cor}">VALOR DAS PNR</th></tr>` +
