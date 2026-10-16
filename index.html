@@ -1580,7 +1580,7 @@ img,svg,canvas,video{max-width:100%}
         <div class="rev-kpis"><div class="rev-kpi"><div class="lbl" id="revKpiAntesLabel">Valor estava</div><div class="val" id="revValorEstava">R$ 0,00</div></div><div class="rev-kpi"><div class="lbl" id="revKpiValorLabel">Valor revertido</div><div class="val" id="revValor">R$ 0,00</div></div><div class="rev-kpi rev-value-current-card"><div class="lbl" id="revKpiRiscoLabel">Valor atual</div><div class="val" id="revRisco">R$ 0,00</div></div><div class="rev-kpi rev-risk-card"><div class="lbl" id="revKpiNaoLabel">% em risco</div><span role="button" tabindex="0" class="val rev-risk-toggle" id="revNaoRevertido" aria-expanded="false" aria-controls="revRiskDetail">0,0%</span><div class="rev-risk-detail" id="revRiskDetail" hidden></div></div><div class="rev-kpi"><div class="lbl" id="revKpiBasesLabel">Bases com reversão</div><div class="val" id="revBases">0</div></div><div class="rev-kpi"><div class="lbl">Pacotes dentro do prazo</div><div class="val" id="revPersistentesSemRisco">0</div></div><div class="rev-kpi"><div class="lbl">Pacotes em risco</div><div class="val" id="revPersistentesComRisco">0</div></div></div>
     <div class="rev-table-wrap"><table class="rev-table"><thead><tr><th>Situação</th><th>Regional</th><th>Base</th><th id="revColAntes">Valor estava</th><th id="revColRevertido">Valor revertido</th><th id="revColAtual" class="rev-current-column">Valor atual</th><th id="revColNaoRevertido">Pacote em risco</th><th id="revColMeta" class="rev-meta-column">Valor-alvo da meta</th><th id="revColPercent" class="rev-summary-col">% Pacote Revertido</th><th>Dentro do prazo</th><th>Em risco</th><th>Motorista mais ofensor</th><th>Dias como ofensor</th></tr></thead><tbody id="revBody"></tbody></table></div>
     <div class="driver-detail-panel" id="motoristaDetalhePanel" style="display:none;"><div class="driver-detail-head"><div><h3 id="motoristaDetalheTitulo">Detalhes do motorista</h3><div class="osub">Pacotes e ocorrências do motorista selecionado</div></div><button type="button" class="overlay-close" id="motoristaDetalheFechar">Fechar detalhes</button></div><div class="rev-kpis"><div class="rev-kpi"><div class="lbl">Motorista</div><div class="val" id="motoristaNome">—</div></div><div class="rev-kpi"><div class="lbl">Valor em risco</div><div class="val" id="motoristaValor">R$ 0,00</div></div><div class="rev-kpi"><div class="lbl">Dias como ofensor</div><div class="val" id="motoristaOcorrencias">0</div><div id="motoristaOfensorFaixas"></div></div><div class="rev-kpi"><div class="lbl">Pacotes atuais do motorista</div><div class="val" id="motoristaPacotes">0</div></div></div><div class="rev-table-wrap"><table class="rev-table"><thead><tr><th>Data</th><th>Regional</th><th>Base</th><th>Pacote</th><th>Tipo</th><th>Valor de risco</th><th>Motivo</th></tr></thead><tbody id="motoristaBody"></tbody></table></div></div>
-    <p class="rev-note">A meta semanal calcula a redução esperada por base: por exemplo, 5% de R$ 20.000 significa reduzir R$ 1.000 e terminar em até R$ 19.000. A coluna Valor-alvo da meta mostra o limite final que cada base precisa atingir. Cada pacote é contado uma única vez no período. Na visão Valor Revertido, o valor é calculado pacote a pacote: pacote que desaparece até 24 horas é revertido; pacote que continua presente após 24 horas é não revertido/ofensor. Na visão Pacote Revertido, cada pacote segue a mesma regra de 24 horas. O Valor atual mostra o total real da base na planilha final, sem limitar o total ao status selecionado.</p>
+    <p class="rev-note">A meta semanal calcula a redução esperada por base: por exemplo, 5% de R$ 20.000 significa reduzir R$ 1.000 e terminar em até R$ 19.000. A coluna Valor-alvo da meta mostra o limite final que cada base precisa atingir. Cada pacote é contado uma única vez no período. Na visão Valor Revertido, Valor revertido é a redução entre Valor estava e Valor atual. Pacote em risco é a soma dos pacotes que continuam presentes após 24 horas. Na visão Pacote Revertido, cada pacote segue a regra de 24 horas. O Valor atual mostra o total real da base na planilha final, sem limitar o total ao status selecionado.</p>
   </div>
 
   <!-- ===================== IMPORTADOS ===================== -->
@@ -4321,11 +4321,12 @@ function renderRevResumo(rangeDates,f,comp,atual,status){
   const totalRow=rangeDates.length>1?'<tr class="rev-resumo-total"><td>Total</td><td>'+fmtBRL(last)+'</td><td></td><td><span class="ok">'+fmtBRL(totRev)+'</span></td><td><span class="bad">'+fmtBRL(totNovo)+'</span></td></tr>':'';
   box.innerHTML='<div class="rev-resumo-head"><strong>Resumo do período'+({green:' · só Valor Revertido',orange:' · só Em prazo',red:' · só Não revertido'}[status]||'')+'</strong><span>'+fmtInt(rangeDates.length)+' dia(s) com planilha entre '+fullD(comp)+' e '+fullD(atual)+'</span></div><div class="rev-resumo-txt">'+frase+'</div><div class="rev-resumo-scroll"><table><thead><tr><th>Dia</th><th>Valor em risco</th><th>Pacotes</th><th>Revertido vs dia anterior</th><th>Valor novo</th></tr></thead><tbody>'+rows.join('')+totalRow+'</tbody></table></div>';
 }
-/* As duas visões usam prazo de 24 horas.
-   - Valor Revertido: soma o valor por pacote.
-   - Pacote Revertido: mesma regra de 24 horas.
+/* Valor revertido = Valor estava − Valor atual. Pacote em risco considera 24 horas.
+   - Valor Revertido: Pacote em risco = valor do pacote presente após 24h.
+   - Pacote Revertido: regra de 24 horas.
    Uma nova aparição após ter sumido inicia um ciclo/prazo novo. */
 const REV_PRAZO_VALOR_HORAS=24;
+const REV_PRAZO_REVERSAO_HORAS=24;
 const REV_PRAZO_PACOTE_HORAS=24;
 function revPrazoHoras(packageMode){ return packageMode?REV_PRAZO_PACOTE_HORAS:REV_PRAZO_VALOR_HORAS; }
 function revAddBusinessDay(timestamp, horas=REV_PRAZO_PACOTE_HORAS){ return new Date(timestamp).getTime() + horas*60*60*1000; }
@@ -4490,7 +4491,7 @@ function renderRevertido(){
        A visão de pacotes preserva a regra histórica de redução/saída. */
     revAmt=packageMode
       ? (inLast?Math.max(0,beforeValue-afterValue):Math.max(beforeValue,Number(p.lastValue)||0))
-      : (inLast?0:Math.max(beforeValue,Number(p.lastValue)||0));
+      : (inLast?0:(elapsedHours>=REV_PRAZO_REVERSAO_HORAS?Math.max(beforeValue,Number(p.lastValue)||0):0));
     if(!inLast){
       st='green'; removedAmt=0;
     } else if(elapsedHours>=prazoHoras) st='red';
@@ -4528,11 +4529,13 @@ function renderRevertido(){
   const scopeBefore=selectedBaseForMeta!=='TODAS'
     ? (beforeByBase[selectedBaseForMeta]||0)
     : Object.entries(beforeByBase).reduce((sum,[base,value])=>sum+(selectedRegionForMeta==='TODOS'||regionalFromBasePrefix(base)===selectedRegionForMeta?Number(value)||0:0),0);
-  const scopeLabel=selectedBaseForMeta!=='TODAS'?'A base':(selectedRegionForMeta!=='TODOS'?'A regional':'Cada base');
+  const scopeLabel=selectedBaseForMeta!=='TODAS'?'A base':(selectedRegionForMeta!=='TODOS'?'A regional':'As bases');
   if(metaHelp){
     metaHelp.textContent=configuredMetaPct>0
-      ? (scopeLabel+' terá que diminuir '+(scopeLabel==='Cada base'?String(configuredMetaPct).replace('.',',')+'% do seu Valor estava':'−'+fmtBRL(scopeBefore*configuredMetaPct/100)))
-      : 'As bases terão que diminuir —';
+      ? (scopeLabel+' deverão diminuir: '+(selectedBaseForMeta==='TODAS'&&selectedRegionForMeta==='TODOS'
+          ? String(configuredMetaPct).replace('.',',')+'% do próprio Valor estava'
+          : '−'+fmtBRL(scopeBefore*configuredMetaPct/100)))
+      : 'As bases deverão diminuir: —';
   }
   const rows=Array.from(oneRowPerBase.values()).map(r=>{
     const baseBefore=beforeByBase[r.base]||0, baseCurrent=currentByBase[r.base]||0;
@@ -4610,13 +4613,13 @@ function renderRevertido(){
   document.getElementById('revBases').textContent=fmtInt(basesCount);
   document.getElementById('revPersistentesSemRisco').textContent=fmtInt(revStatusFilter==='TODOS'?allWithin:totalWithin);
   document.getElementById('revPersistentesComRisco').textContent=fmtInt(revStatusFilter==='TODOS'?allRisk:totalRisk);
-  document.getElementById('revViewHelp').textContent=packageMode?'Visão por pacotes: cada pacote é avaliado após 24 horas; se continuar presente, fica não revertido/ofensor. Se desaparecer, fica revertido.':'Visão por valor: soma o valor dos pacotes. Se desaparecerem até 24 horas, são revertidos; se continuarem após 24 horas, são não revertidos/ofensores. O Valor atual mostra o total real da base.';
+  document.getElementById('revViewHelp').textContent=packageMode?'Visão por pacotes: cada pacote é avaliado após 24 horas; se continuar presente, fica não revertido/ofensor. Se desaparecer, fica revertido.':'Visão por valor: Valor revertido é a redução entre Valor estava e Valor atual. Pacote em risco é a soma dos pacotes presentes após 24 horas.';
   document.getElementById('revColAntes').textContent=packageMode?'Pacotes analisados':'Valor estava';
   document.getElementById('revColRevertido').textContent=packageMode?(revStatusFilter==='red'?'Pacotes não revertidos':'Pacotes revertidos'):(revStatusFilter==='red'?'Valor não revertido':'Valor revertido');
   document.getElementById('revColAtual')?.classList.toggle('rev-value-hidden',packageMode);
   document.getElementById('revColMeta')?.classList.toggle('rev-value-hidden',packageMode);
   document.getElementById('revColNaoRevertido').textContent=packageMode?'% Não Revertido':'Pacote em risco';
-  document.getElementById('revColNaoRevertido').hidden=!packageMode&&(revStatusFilter==='green'||revStatusFilter==='red');
+  document.getElementById('revColNaoRevertido').hidden=false;
   document.getElementById('revColPercent').textContent=packageMode?'% Pacote Revertido':'';
   setRevPeriodo((packageMode?'Pacote Revertido':'Valor Revertido')+' · '+fmtFull(startDay)+' até '+fmtFull(endDay)+((startDay!==comp.value||endDay!==atual.value)?' · só há planilha de '+fmtFull(startDay)+' a '+fmtFull(endDay)+' dentro do intervalo pedido':''));
   const pkgSet=revStatusFilter==='TODOS'?null:new Set(visibleRows.flatMap(r=>Array.from(r.pkgs)));
@@ -4633,7 +4636,7 @@ function renderRevertido(){
     const valueText=fmtBRL(valueAmount);
     const nonRevertedCell=packageMode
       ? '<td>'+percent(rowStatus==='green'?reverted:(b.baseRisk||0),total)+'</td>'
-      : ((revStatusFilter==='green'||revStatusFilter==='red')?'':'<td>'+((b.nonRevertedValue||0)>0.005?'<span class="rev-value-trend up">'+fmtBRL(b.nonRevertedValue)+'</span>':fmtBRL(0))+'</td>');
+      : '<td>'+((b.nonRevertedValue||0)>0.005?'<span class="rev-value-trend up">'+fmtBRL(b.nonRevertedValue)+'</span>':fmtBRL(0))+'</td>';
     const metaRaw=document.getElementById('revMeta')?.value.trim()||'';
     const metaPct=metaRaw?Math.max(0,parseBRNumber(metaRaw)):0;
     const metaReduction=b.baseBefore*metaPct/100;
