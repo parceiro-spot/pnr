@@ -4,7 +4,7 @@ let pnr = null, bsc = null, rows = [], total = 0, statusAll = {};
 let cur = ST[0], tipo = "TODOS", data = "TUDO", regional = "TODAS", charts = [];
 const brl = v => v.toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
 const ddmm = d => d.split("-").reverse().join("/");
-const isXPT = b => b.toUpperCase().startsWith("E");
+const isXPT = b => (b || "").toString().trim().toUpperCase().startsWith("E");
 const regionBases = {
   "ESPÍRITO SANTO": { xpt: ["ES"], svc: ["SES"] },
   "MINAS GERAIS": { xpt: ["EMG"], svc: ["SMG"] },
@@ -33,10 +33,12 @@ const displayBase = r => {
   return r.base;
 };
 const field = (r, names) => {
-  const norm = s => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-  const wanted = names.map(norm), key = Object.keys(r || {}).find(k => wanted.includes(norm(k)) || wanted.some(n => norm(k).includes(n)));
+  const norm = s => (s || "").replace(/^\uFEFF/, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const wanted = names.map(norm), keys = Object.keys(r || {});
+  const key = keys.find(k => wanted.includes(norm(k))) || keys.find(k => wanted.some(n => norm(k).includes(n)));
   return key ? (r[key] || "").toString().trim() : "";
 };
+const routeKey = value => (value || "").toString().trim().toUpperCase().replace(/\s+/g, "");
 const getRegional = r => field(r, ["REGIONAL", "REGIAO", "REGIONAL DE ATENDIMENTO", "REGIONAL OPERACIONAL"]);
 // Aceita formatos como "R$ 48.00", "R$ 1.234,56" e "R$ 1,234.56".
 function money(v) {
@@ -74,28 +76,28 @@ function build() {
   $("#info").textContent = "";
   const mp = new Map();
   for (const r of bsc) {
-    const k = (r.Rotas || r.IdRota || "").toString().trim();
+    const k = routeKey(field(r, ["ROTAS", "IDROTA", "ID DA ROTA", "ROTA"]));
     if (k && !mp.has(k)) mp.set(k, {
-      xpt: (r.XPT || "").toString().trim(),
-      svc: (r.SVC || "").toString().trim(),
+      xpt: field(r, ["XPT"]),
+      svc: field(r, ["SVC"]),
       regional: getRegional(r)
     });
   }
   rows = []; statusAll = {}; total = pnr.length;
   let achou = 0;
   for (const r of pnr) {
-    const st = (r["STATUS"] || "").trim();
+    const st = field(r, ["STATUS"]);
     statusAll[st] = (statusAll[st] || 0) + 1;
     if (!ST.includes(st)) continue;
-    const orig = (r["ESTAÇÃO DE ORIGEM"] || "").trim(), rota = (r["ID DA ROTA"] || "").trim();
-    const hit = mp.get(rota), x = hit?.xpt || "", svc = hit?.svc || "";
+    const orig = field(r, ["ESTAÇÃO DE ORIGEM", "ORIGEM"]), rota = field(r, ["ID DA ROTA", "IDROTA", "ROTA"]);
+    const hit = mp.get(routeKey(rota)), x = hit?.xpt || "", svc = hit?.svc || "";
     const ok = !!hit;
     if (ok) achou++;
     const base = !vazio(x) ? x : (!vazio(svc) ? svc : orig);
     const reg = regionForBase(base);
     rows.push({
-      data: (r["DATA DO CASO"] || "").slice(0, 10), status: st, id: r["ID DE ENVIO"],
-      valor: money(r["VALOR DA COMPRA"]),
+      data: field(r, ["DATA DO CASO"]).slice(0, 10), status: st, id: field(r, ["ID DE ENVIO"]),
+      valor: money(field(r, ["VALOR DA COMPRA"])),
       base, regional: reg, orig, rota, ok, xpt: x, svc
     });
   }
