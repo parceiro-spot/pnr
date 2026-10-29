@@ -339,6 +339,14 @@
     $("#fBadBox").hidden = !bad.length;
     $("#fBadSum").textContent = `⚠️ ${bad.length} respostas sem ID válido de 11 dígitos (ID truncado, nome no lugar do ID…)`;
     $("#fBad").innerHTML = bad.length ? `<table><tr><th>Data</th><th>Validador</th><th>ID digitado</th><th>Base</th><th>Motorista</th><th>Focal</th></tr>${bad.slice(0, 300).map(b => `<tr><td>${fmtDT(b.ts)}</td><td>${esc(b.validador)}</td><td>${esc(b.idRaw)}</td><td>${esc(b.baseRaw)}</td><td>${esc(b.motorista)}</td><td>${esc(b.focal)}</td></tr>`).join("")}</table>` : "";
+    renderMessageBox();
+  }
+
+  function renderMessageBox() {
+    const box = $("#fMsgBox");
+    if (!box) return;
+    box.hidden = false;
+    box.innerHTML = `<h3>MENSAGEM LOGISTIC PARA${tratando ? ` <span class="msg-target">${esc(tratando)}</span>` : ""}</h3><p class="mu">Escolha uma mensagem e clique em copiar.</p><div class="trat-msg"><select class="trat-msg-select" aria-label="Escolher mensagem para o Logistic"><option value="">Escolher mensagem…</option>${MSGS.map(([t], i) => `<option value="${i}">${esc(t)}</option>`).join("")}</select><button type="button" class="mini" data-msg-copy="global">⧉ Copiar</button></div>`;
   }
 
   function rowHtml(c) {
@@ -381,9 +389,10 @@
     if (tratando === id) return;
     tratando = id;
     document.querySelectorAll("#fList .fr.trat").forEach(r => { r.classList.remove("trat"); const t = r.querySelector(".trat-tag"); if (t) t.remove(); });
-    if (!id) return;
+    if (!id) { renderMessageBox(); return; }
     const row = document.querySelector(`#fList .fr[data-id="${id}"]`);
     if (row) { row.classList.add("trat"); row.querySelector(".c3").insertAdjacentHTML("beforeend", tratTag(id)); }
+    renderMessageBox();
   }
   function removeId(id) {
     if (!id) return;
@@ -439,7 +448,7 @@
       toast("🕶 Link do Logistic copiado. Abra uma janela anônima (Ctrl+Shift+N), cole o link (Ctrl+V) e depois copie o ID no ⧉ ao lado do pacote " + t.dataset.lga + ".");
     }
     if (t.dataset.msgCopy) {
-      const select = t.closest(".trat-msg")?.querySelector(".trat-msg-select");
+      const select = t.closest(".trat-msg")?.querySelector(".trat-msg-select") || $("#fMsgBox .trat-msg-select");
       const index = select && select.value !== "" ? Number(select.value) : -1;
       if (index >= 0 && MSGS[index]) { copy(MSGS[index][1]); flash(t, "✓ copiado"); }
       else toast("Escolha uma mensagem do Logistic antes de copiar.");
@@ -597,16 +606,33 @@
   document.addEventListener("keydown", e => { if (e.key === "Escape") $("#dl").hidden = true; });
 
   // ---------- Mensagem para Logistic ----------
-  const MSGS = [
+  const DEFAULT_MSGS = [
     ["Entregue", "O vendedor confirma o recebimento do produto"],
     ["PNR Cartão", "O vendedor confirma recebimento do cartão."],
     ["Baixado pelo Meli", "A baixa de entrega não foi feita pelo driver"],
     ["Produto diferente", "A entrega foi realizada corretamente, porém o vendedor enviou o produto diferente do que foi comprado"],
-    ["Faltante", "O vendedor enviou o pedido incompleto para o cliente."]
+    ["Item faltante", "O vendedor enviou o pedido incompleto para o cliente."]
   ];
-  $("#msgList").innerHTML = MSGS.map(([t, m], i) => `<div class="msgc" data-m="${i}"><h3>${esc(t)}</h3><p>${esc(m)}</p><button type="button" class="mini">⧉ Copiar</button></div>`).join("");
+  const savedMsgs = store.get("forms_custom_msgs", []);
+  let MSGS = DEFAULT_MSGS.concat(Array.isArray(savedMsgs) ? savedMsgs.filter(x => Array.isArray(x) && x.length >= 2 && String(x[0]).trim() && String(x[1]).trim()) : []);
+  function renderMsgs() {
+    $("#msgList").innerHTML = MSGS.map(([t, m], i) => `<div class="msgc" data-m="${i}"><h3>${esc(t)}</h3><p>${esc(m)}</p><button type="button" class="mini">⧉ Copiar</button></div>`).join("");
+  }
+  renderMsgs();
   $("#msgList").addEventListener("click", e => {
     const c = e.target.closest(".msgc"); if (!c) return;
     copy(MSGS[+c.dataset.m][1]); flash(c.querySelector("button"), "✓ copiado");
   });
+  $("#msgAdd").onclick = () => { $("#msgForm").hidden = false; $("#msgTitle").focus(); };
+  $("#msgCancel").onclick = () => { $("#msgForm").hidden = true; $("#msgTitle").value = ""; $("#msgText").value = ""; };
+  $("#msgSave").onclick = () => {
+    const title = $("#msgTitle").value.trim(), text = $("#msgText").value.trim();
+    if (!title || !text) { alert("Preencha o título e a mensagem antes de salvar."); return; }
+    MSGS.push([title, text]);
+    store.set("forms_custom_msgs", MSGS.slice(DEFAULT_MSGS.length));
+    renderMsgs();
+    $("#msgCancel").onclick();
+    if (A) render();
+    toast("Mensagem Logistic adicionada.");
+  };
 })(typeof window !== "undefined" ? window : globalThis);

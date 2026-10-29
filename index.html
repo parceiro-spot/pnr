@@ -52,12 +52,14 @@
 <button id="fCopyIds">⧉ Copiar IDs da lista</button><button id="fShot">📷 Baixar print</button><button id="fCopyPrint">📋 Copiar print</button><button id="fClear">↩ Desfazer alterações</button><button id="fDown" class="pri">⬇ BAIXAR FORMS</button>
 </div>
 
-<div id="fPanel"><div id="fTitle"></div><div id="fList"></div><div class="frow c"><button id="fMore" hidden>Mostrar mais</button></div></div>
+<div id="fPanel"><div id="fTitle"></div><div id="fList"></div><div class="frow c"><button id="fMore" hidden>Mostrar mais</button></div><div id="fMsgBox" class="forms-msg card" hidden></div></div>
 <details class="card fcase" id="fBadBox" hidden><summary id="fBadSum"></summary><div id="fBad"></div></details>
 </div>
 </div>
 <div id="formMessageTab" hidden>
 <p class="sub">Mensagens prontas para o Logistic. Clique em <b>Copiar</b> (ou no cartão) e cole no caso.</p>
+<div class="frow"><button id="msgAdd" class="pri" type="button">＋ Adicionar mensagem</button></div>
+<div id="msgForm" class="card msg-form" hidden><h3>Adicionar mensagem Logistic</h3><div class="msg-form-grid"><label>Título<input id="msgTitle" type="text" maxlength="80" placeholder="Ex.: Endereço incorreto"></label><label>Mensagem<textarea id="msgText" rows="4" maxlength="1000" placeholder="Digite a mensagem para copiar"></textarea></label></div><div class="frow"><button id="msgSave" class="pri" type="button">Salvar mensagem</button><button id="msgCancel" type="button">Cancelar</button></div></div>
 <div id="msgList" class="msgs"></div>
 </div>
 </section>

@@ -146,6 +146,11 @@ a.btn.sm{padding:2px 8px;font-size:12px}
 .lgpair{display:flex;gap:6px;flex-wrap:wrap}
 .trat-msg{display:none;align-items:center;gap:6px;flex-wrap:wrap}
 .fr.trat .trat-msg{display:flex}
+.forms-msg{margin:12px 0 0;border-left:5px solid #e6a100;background:linear-gradient(90deg,rgba(230,161,0,.10),var(--sf) 42%)}
+.forms-msg h3{margin:0;text-transform:uppercase;font-size:14px;letter-spacing:.04em}
+.forms-msg p{margin:2px 0 8px}
+.forms-msg .trat-msg{display:flex}
+.msg-target{font-family:ui-monospace,Consolas,monospace;color:#9a5b00}
 .trat-msg-select{max-width:180px;padding:5px 8px;font-size:12px}
 button.btn.lgan{display:inline-block;font:inherit;font-size:13px;font-weight:600;color:var(--tx);border:1px solid var(--ln);background:var(--sf);padding:6px 12px;border-radius:8px;cursor:pointer}
 button.btn.lgan:hover{background:#1f2937;color:#fff;border-color:#1f2937}
@@ -174,3 +179,8 @@ button.btn.lgan:hover{background:#1f2937;color:#fff;border-color:#1f2937}
 .msgc h3{margin:0;font:700 15px Georgia,serif}
 .msgc p{margin:0;flex:1;line-height:1.45}
 .msgc button{align-self:flex-start;font-weight:700}
+.msg-form h3{margin:0 0 10px;font-size:15px}
+.msg-form-grid{display:grid;grid-template-columns:minmax(180px,.7fr) minmax(280px,1.3fr);gap:12px}
+.msg-form label{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:13px}
+.msg-form input,.msg-form textarea{font:inherit;border:1px solid var(--ln);background:var(--sf);color:var(--tx);padding:8px 10px;border-radius:8px;resize:vertical}
+@media(max-width:700px){.msg-form-grid{grid-template-columns:1fr}}
