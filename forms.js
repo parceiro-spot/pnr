@@ -27,7 +27,14 @@
     const s = String(v ?? "").trim();
     if (!s) return null;
     let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})[ T,]*(\d{1,2})?:?(\d{2})?:?(\d{2})?/);
-    if (m) return new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+    if (m) {
+      const a = +m[1], b = +m[2];
+      // O ODS baixado pelo Forms usa mês/dia (ex.: 7/31/2026).
+      // Se um dos campos for maior que 12, use o formato não ambíguo.
+      const month = b > 12 ? a : (a > 12 ? b : a);
+      const day = b > 12 ? b : (a > 12 ? a : b);
+      return new Date(+m[3], month - 1, day, +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+    }
     m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T]?(\d{2})?:?(\d{2})?:?(\d{2})?/);
     if (m) return new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
     const d = new Date(s);
@@ -534,6 +541,7 @@
   $("#dlH1").innerHTML = HORAS.map(h => `<option value="${h}">a partir das ${pad2(h)}:00</option>`).join("");
   $("#dlH2").innerHTML = HORAS.map(h => `<option value="${h}">até ${pad2(h)}:59</option>`).join("");
   const atHour = (key, h, end) => { const [y, m, d] = key.split("-").map(Number); return end ? new Date(y, m - 1, d, h, 59, 59, 999) : new Date(y, m - 1, d, h, 0, 0, 0); };
+  const isTimestampKey = k => { const n = N(k); return n.startsWith("CARIMBO") || n.includes("DATAHORA") || n.includes("TIMESTAMP"); };
   function dayData() {
     reanalyze();
     const C = A.cols, only = $("#dlOnly").checked;
@@ -542,12 +550,14 @@
     const from = atHour(d1, h1, false), to = atHour(d2, h2, true);
     const { out } = Core.applyEdits(forms, A);
     const edIdx = new Set(A.cases.filter(c => c.last.edited).map(c => c.last.i));
-    const header = [...new Set(forms.slice(0, 50).flatMap(r => Object.keys(r)))];
+    const allHeaders = [...new Set(forms.slice(0, 50).flatMap(r => Object.keys(r)))];
+    const tsCol = C.ts || allHeaders.find(isTimestampKey) || "Carimbo de data/hora";
+    const header = [tsCol, ...allHeaders.filter(k => k !== tsCol)];
     let nEd = 0;
     const rows = out.filter((r, i) => {
       const ids = C.id ? extractIds(r[C.id]) : [];
       if (ids.some(id => excludedIds.has(id))) return false;
-      const d = C.ts ? parseTs(r[C.ts]) : null;
+      const d = parseTs(r[tsCol]);
       const inR = !!d && d >= from && d <= to, ed = edIdx.has(i);
       // O período é definido pelo carimbo original do Forms. Editar uma resposta antiga
       // não pode fazer essa resposta aparecer no arquivo de uma data diferente.
@@ -559,7 +569,7 @@
     const label = `${fmtDay(d1)} ${pad2(h1)}:00 → ${fmtDay(d2)} ${pad2(h2)}:59`;
     const fullDays = h1 === 0 && h2 === 23;
     const fname = d1 === d2 && fullDays ? `Forms_${dmy(d1)}.xlsx` : `Forms_${dmy(d1)}_${pad2(h1)}h_a_${dmy(d2)}_${pad2(h2)}h.xlsx`;
-    return { rows, header, label, fname, nEd, bad: from > to };
+    return { rows, header, tsCol, label, fname, nEd, bad: from > to };
   }
   function dlRefresh() {
     if (!forms || !A) { $("#dlInfo").textContent = "Suba o Forms primeiro."; return; }
@@ -590,13 +600,18 @@
   // converta somente essa coluna para uma data real, sem alterar o instante original.
   const exportValue = (r, k) => {
     const tsCol = A && A.cols && A.cols.ts;
-    return k === tsCol ? (parseTs(r[k]) || r[k]) : r[k];
+    return (k === tsCol || isTimestampKey(k)) ? (parseTs(r[k]) || r[k]) : r[k];
+  };
+  const pasteHeader = header => {
+    const i = header.findIndex(isTimestampKey);
+    return i >= 0 ? [header[i], ...header.filter((_, ix) => ix !== i)] : header;
   };
   $("#dlXlsx").onclick = async e => {
     const { rows, header, fname } = dayData(); if (!rows.length) return;
-    const clean = rows.map(r => { const o = {}; for (const k of header) { const v = exportValue(r, k); if (v !== "" && v != null) o[k] = v; } return o; });
-    const ws = XLSX.utils.json_to_sheet(clean, { header, dateNF: "dd/mm/yyyy hh:mm:ss", cellDates: true });
-    ws["!cols"] = header.map(h => ({ wch: /EVID|MOTIVO/i.test(h) ? 40 : /CARIMBO/i.test(h) ? 20 : 18 }));
+    const outHeader = pasteHeader(header);
+    const clean = rows.map(r => { const o = {}; for (const k of outHeader) { const v = exportValue(r, k); if (v !== "" && v != null) o[k] = v; } return o; });
+    const ws = XLSX.utils.json_to_sheet(clean, { header: outHeader, dateNF: "dd/mm/yyyy hh:mm:ss", cellDates: true });
+    ws["!cols"] = outHeader.map(h => ({ wch: /EVID|MOTIVO/i.test(h) ? 40 : /CARIMBO/i.test(h) ? 20 : 18 }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Respostas ao formulário 1");
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "array", cellDates: true });
@@ -606,7 +621,8 @@
   // copia só as linhas (sem cabeçalho), separadas por tab: é só colar na primeira linha vazia da planilha do Forms
   $("#dlCopy").onclick = async e => {
     const { rows, header } = dayData(); if (!rows.length) return;
-    const tsv = rows.map(r => header.map(h => cellTxt(exportValue(r, h)).replace(/[\t\r\n]+/g, " ")).join("\t")).join("\n");
+    const outHeader = pasteHeader(header);
+    const tsv = rows.map(r => outHeader.map(h => cellTxt(exportValue(r, h)).replace(/[\t\r\n]+/g, " ")).join("\t")).join("\n");
     await copy(tsv); flash(e.target, `✓ ${rows.length} linhas copiadas`);
   };
   document.addEventListener("keydown", e => { if (e.key === "Escape") $("#dl").hidden = true; });
