@@ -211,7 +211,9 @@
       return new Promise(res => Papa.parse(f, { header: true, skipEmptyLines: true, complete: r => res(r.data) }));
     }
     const buf = await f.arrayBuffer();
-    const wb = XLSX.read(buf, { type: "array", cellDates: true });
+    // Manter carimbos do Excel como número serial: parseTs converte o calendário
+    // do arquivo explicitamente, sem deslocamento causado pelo fuso do navegador.
+    const wb = XLSX.read(buf, { type: "array", cellDates: false });
     return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "", raw: true });
   }
   function wire(box, input, st, cb) {
