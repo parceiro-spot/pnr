@@ -1,7 +1,7 @@
 # Análise PNR
 
 - **Análise PNR** (aba 1): LOGISTICS_PNR + SRM BSC, gráficos e prints.
-- **Análise Forms** (aba 2): suba o Forms baixado em .ods (ou .xlsx/.csv). Junta por ID, conta recusas, filtra por regional e tem o botão "Abrir Logistic", que copia o ID do pacote e abre https://envios.adminml.com/logistics/case-center/cases.
+- **Análise Forms** (aba 2): suba o Forms baixado em .ods (ou .xlsx/.csv). Junta por ID, conta recusas, filtra por regional e tem a opção "Abrir Logistic" em duas versões: **Normal** (copia o ID do pacote e abre https://envios.adminml.com/logistics/case-center/cases) e **Anônimo** (copia o link; o navegador não deixa o site abrir janela anônima sozinho, então é só abrir uma com Ctrl+Shift+N e colar).
 
 Regionais (pelo prefixo da base): MG = EMG/SMG · ES = ES/SES/EES/EBA · BA = SBA · RJ = ERJ/SRJ · SP = SSP.
 Para mudar, edite a lista `REGIONAIS` no topo de `forms.js`.
@@ -11,3 +11,5 @@ Na aba Forms cada pacote tem um seletor de status (RECUSADA, ANEXADA, ANULADA, F
 O ⧉ ao lado do ID copia só o ID; o botão "Copiar ID, base e focal" (abaixo da focal) copia "ID - BASE - FOCAL". O 📷 abre a foto direto no Drive. O motivo aparece resumido (ex.: "CLIENTE RECEBEU").
 
 Regionais: clique para marcar várias (ou "Todas"). 📷/📋 Print gera a imagem da lista atual. Abaixo do status há o seletor de Validador (LUIZA FRANÇA, KETHELLY, EDUARDA CARVALHO, VITÓRIA), que também sai no BAIXAR FORMS.
+
+O **validador do Forms tem prioridade**: ao baixar/subir o Forms de novo, se a resposta traz um validador diferente do que estava lá quando você alterou aqui (ex.: outra pessoa assumiu), vale o nome que está no Forms. Nomes que não estão na lista fixa aparecem normalmente no seletor.

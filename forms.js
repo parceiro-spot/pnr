@@ -130,8 +130,11 @@
         const cp = { ...last, edited: true, origStatus: last.status, origMot: last.motRecusa, origVal: last.validador };
         if (ed.s) { cp.status = normStatus(ed.s); cp.statusOut = ed.s; }
         if (ed.m !== undefined) { cp.motRecusa = ed.m; cp.motOut = ed.m; }
-        if (ed.v !== undefined) { cp.validador = ed.v; cp.valOut = ed.v; }
-        att[att.length - 1] = cp; last = cp;
+        // O validador do Forms tem prioridade: se o Forms baixado agora traz outro validador
+        // diferente do que existia quando a alteração foi feita aqui, vale o do Forms.
+        const formsMudouVal = ed.v !== undefined && ed.ov !== undefined && N(ed.ov) !== N(last.validador);
+        if (ed.v !== undefined && !formsMudouVal) { cp.validador = ed.v; cp.valOut = ed.v; }
+        if (cp.statusOut !== undefined || cp.motOut !== undefined || cp.valOut !== undefined) { att[att.length - 1] = cp; last = cp; }
       }
       let code = "";
       for (let k = att.length - 1; k >= 0 && !code; k--) code = att[k].codes[0] || "";
@@ -295,7 +298,7 @@
   function rowHtml(c) {
     const L = c.last, u = L.urls;
     const rec = c.recusas === 0 ? "" : `<span class="rec ${c.recusas >= 3 ? "r3" : c.recusas === 2 ? "r2" : "r1"}">${c.recusas >= 3 ? "⚠ " : ""}${c.recusas}× recusada</span>`;
-    const caso = `<a class="btn pri" target="_blank" rel="noopener" href="${LOGISTIC_URL}" data-lg="${c.id}" title="Copia o ID e abre o Logistic">Abrir Logistic ↗</a>`;
+    const caso = `<div class="lgbox"><small>Abrir Logistic</small><div class="lgpair"><a class="btn pri" target="_blank" rel="noopener" href="${LOGISTIC_URL}" data-lg="${c.id}" title="Copia o ID e abre o Logistic no navegador normal">🌐 Normal ↗</a><button type="button" class="btn lgan" data-lga="${c.id}" title="Copia o link do Logistic para colar numa janela anônima">🕶 Anônimo</button></div></div>`;
     const evid = u.length ? `<div class="fotos"><a class="btn ph" target="_blank" rel="noopener" href="${esc(u[0])}" title="Abrir a foto no Drive">📷 Ver foto</a>${u.slice(1).map((x, i) => `<a class="btn sm" target="_blank" rel="noopener" href="${esc(x)}" title="Abrir a foto ${i + 2}">📷 ${i + 2}</a>`).join("")}</div>` : (L.evid ? `<span class="mu" title="${esc(L.evid)}">arquivo sem link</span>` : "");
     const SEL = [["RECUSADA", "RECUSADA"], ["ANEXADA", "ANEXADA"], ["ANULADA", "ANULADA"], ["FATURADA", "FATURADA"], ["NÃO SUBIR", "EM ANÁLISE"]];
     const orig = L.edited ? L.origStatus : L.status;
@@ -319,10 +322,16 @@
     try { await navigator.clipboard.writeText(t); }
     catch (e) { const a = document.createElement("textarea"); a.value = t; document.body.append(a); a.select(); document.execCommand("copy"); a.remove(); }
   };
+  const toast = msg => {
+    let el = document.getElementById("lgToast");
+    if (!el) { el = document.createElement("div"); el.id = "lgToast"; document.body.append(el); }
+    el.textContent = msg; el.classList.add("show");
+    clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove("show"), 7000);
+  };
   const flash = (el, t) => { const o = el.textContent; el.textContent = t; setTimeout(() => el.textContent = o, 900); };
   // Clicar em "Abrir Logistic" copia o ID do pacote e abre a página do Logistic (é só colar o ID na busca)
   $("#fList").addEventListener("click", e => {
-    const t = e.target.closest("[data-cp],[data-cpall],[data-h],[data-lg]");
+    const t = e.target.closest("[data-cp],[data-cpall],[data-h],[data-lg],[data-lga]");
     if (!t) return;
     if (t.dataset.cp) { copy(t.dataset.cp); flash(t, "✓"); }
     if (t.dataset.cpall) {
@@ -330,6 +339,11 @@
       if (c) { copy([c.id, c.code || L.baseRaw, L.focal].filter(Boolean).join(" - ")); flash(t, "✓ copiado"); }
     }
     if (t.dataset.lg) { copy(t.dataset.lg); const r = t.closest(".fr"); if (r) r.querySelector(".idv").classList.add("cpd"); }
+    if (t.dataset.lga) {
+      // Navegador não permite abrir janela anônima por script: copia o link e orienta a colar numa janela anônima
+      copy(LOGISTIC_URL); const r = t.closest(".fr"); if (r) r.querySelector(".idv").classList.add("cpd");
+      toast("🕶 Link do Logistic copiado. Abra uma janela anônima (Ctrl+Shift+N), cole o link (Ctrl+V) e depois copie o ID no ⧉ ao lado do pacote " + t.dataset.lga + ".");
+    }
     if (t.dataset.h) { const h = t.closest(".fr").querySelector(".hist"); h.hidden = !h.hidden; }
   });
   const tOf = c => (c.last.ts ? c.last.ts.getTime() : 0);
@@ -353,7 +367,7 @@
     const c = byId.get(el.dataset.sel || el.dataset.val), ed = curEdit(c), orig = c.last.edited ? c.last.origStatus : c.last.status;
     if (el.dataset.val) {
       const origV = c.last.edited ? c.last.origVal : c.last.validador;
-      if (el.value === "" || N(el.value) === N(origV)) delete ed.v; else ed.v = el.value;
+      if (el.value === "" || N(el.value) === N(origV)) { delete ed.v; delete ed.ov; } else { ed.v = el.value; ed.ov = origV || ""; }
     } else {
       if (el.value === "" || normStatus(el.value) === orig) delete ed.s; else ed.s = el.value;
       if ((ed.s ? normStatus(ed.s) : orig) !== "RECUSADA") delete ed.m;
