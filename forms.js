@@ -586,9 +586,15 @@
   ["#dlDate", "#dlDate2", "#dlH1", "#dlH2", "#dlOnly"].forEach(s => { $(s).onchange = dlRefresh; });
   $("#dlClose").onclick = () => { $("#dl").hidden = true; };
   $("#dl").addEventListener("click", e => { if (e.target.id === "dl") $("#dlClose").onclick(); });
+  // O ODS/XLSX pode entregar o carimbo do Forms como número serial. Na saída,
+  // converta somente essa coluna para uma data real, sem alterar o instante original.
+  const exportValue = (r, k) => {
+    const tsCol = A && A.cols && A.cols.ts;
+    return k === tsCol ? (parseTs(r[k]) || r[k]) : r[k];
+  };
   $("#dlXlsx").onclick = async e => {
     const { rows, header, fname } = dayData(); if (!rows.length) return;
-    const clean = rows.map(r => { const o = {}; for (const k of header) if (r[k] !== "" && r[k] != null) o[k] = r[k]; return o; });
+    const clean = rows.map(r => { const o = {}; for (const k of header) { const v = exportValue(r, k); if (v !== "" && v != null) o[k] = v; } return o; });
     const ws = XLSX.utils.json_to_sheet(clean, { header, dateNF: "dd/mm/yyyy hh:mm:ss", cellDates: true });
     ws["!cols"] = header.map(h => ({ wch: /EVID|MOTIVO/i.test(h) ? 40 : /CARIMBO/i.test(h) ? 20 : 18 }));
     const wb = XLSX.utils.book_new();
@@ -600,7 +606,7 @@
   // copia só as linhas (sem cabeçalho), separadas por tab: é só colar na primeira linha vazia da planilha do Forms
   $("#dlCopy").onclick = async e => {
     const { rows, header } = dayData(); if (!rows.length) return;
-    const tsv = rows.map(r => header.map(h => cellTxt(r[h]).replace(/[\t\r\n]+/g, " ")).join("\t")).join("\n");
+    const tsv = rows.map(r => header.map(h => cellTxt(exportValue(r, h)).replace(/[\t\r\n]+/g, " ")).join("\t")).join("\n");
     await copy(tsv); flash(e.target, `✓ ${rows.length} linhas copiadas`);
   };
   document.addEventListener("keydown", e => { if (e.key === "Escape") $("#dl").hidden = true; });
