@@ -180,7 +180,10 @@
   };
   let forms = null, A = null;
   let edits = store.get("forms_edits", {}), byId = new Map();
-  const S = { st: "PENDENTE", reg: new Set(), dt: "TUDO", sort: "rec", q: "", limit: 100 };
+  const SEM_VAL = "(sem validador)";
+  const S = { st: "PENDENTE", reg: new Set(), val: new Set(store.get("forms_val", [])), dt: "TUDO", sort: "rec", q: "", limit: 100 };
+  // nome do validador do pacote (usa o nome padrão da lista quando bate, senão o que veio do Forms)
+  const valOf = c => { const v = String(c.last.validador || "").trim(); if (!v) return SEM_VAL; return VALIDADORES.find(x => N(x) === N(v)) || v; };
   const STATUS_TABS = [["PENDENTE", "A validar"], ["RECUSADA", "Recusadas"], ["ANEXADA", "Anexadas"], ["ANULADA", "Anuladas"], ["FATURADA", "Faturadas"], ["NÃO SUBIR", "Em análise"], ["TODOS", "Todas"]];
   const BADGE = { PENDENTE: "b-pen", RECUSADA: "b-rec", ANEXADA: "b-ane", ANULADA: "b-anu", FATURADA: "b-fat", "NÃO SUBIR": "b-nsub" };
   const label = s => (STATUS_TABS.find(t => t[0] === s) || [0, s])[1];
@@ -237,6 +240,7 @@
   const matches = (c, skip) => {
     if (skip !== "st" && S.st !== "TODOS" && c.status !== S.st) return false;
     if (skip !== "reg" && S.reg.size && !S.reg.has(c.regiao)) return false;
+    if (skip !== "val" && S.val.size && !S.val.has(valOf(c))) return false;
     if (S.dt !== "TUDO" && c.dia !== S.dt) return false;
     if (S.q) {
       const q = N(S.q), hay = N([c.id, c.code, c.regiao, c.last.motorista, c.last.focal, c.last.motivo, c.last.validador].join(" "));
@@ -255,7 +259,8 @@
   function render() { const list = currentList(); renderTop(list); renderList(list); }
   function renderTop(list) {
     const all = A.cases, reg = S.reg;
-    const inReg = all.filter(c => !reg.size || reg.has(c.regiao));
+    const valOk = c => !S.val.size || S.val.has(valOf(c));
+    const inReg = all.filter(c => (!reg.size || reg.has(c.regiao)) && valOk(c));
     const cnt = (fn, l = inReg) => l.filter(fn).length;
     $("#fkpi").innerHTML = [
       ["IDs únicos", inReg.length, `${A.rowsTotal.toLocaleString("pt-BR")} respostas no Forms`],
@@ -277,8 +282,20 @@
       S.limit = 100; render();
     });
 
+    // validador: marque o seu nome (pode marcar mais de um) para ver só os pacotes dele; respeita status, regional e data
+    const vbase = all.filter(c => matches(c, "val"));
+    const extras = [...new Set(all.map(valOf))].filter(v => v !== SEM_VAL && !VALIDADORES.includes(v)).sort();
+    const vnames = [...VALIDADORES, ...extras, SEM_VAL];
+    $("#fVal").innerHTML = `<button data-v="TODOS" class="${!S.val.size ? "on" : ""}">Todos <i>${vbase.length}</i></button>` +
+      vnames.map(v => { const n = vbase.filter(c => valOf(c) === v).length; const on = S.val.has(v); return n || on || VALIDADORES.includes(v) ? `<button data-v="${esc(v)}" class="${on ? "on" : ""}">${on ? "✓ " : ""}${esc(v)} <i>${n}</i></button>` : ""; }).join("");
+    $("#fVal").querySelectorAll("button").forEach(b => b.onclick = () => {
+      const v = b.dataset.v;
+      if (v === "TODOS") S.val.clear(); else if (S.val.has(v)) S.val.delete(v); else S.val.add(v);
+      store.set("forms_val", [...S.val]); S.limit = 100; render();
+    });
+
     $("#fSt").innerHTML = STATUS_TABS.map(([k, t]) => {
-      const n = all.filter(c => (!S.reg.size || S.reg.has(c.regiao)) && (k === "TODOS" || c.status === k)).length;
+      const n = all.filter(c => (!S.reg.size || S.reg.has(c.regiao)) && valOk(c) && (k === "TODOS" || c.status === k)).length;
       return `<button data-s="${k}" class="${S.st === k ? "on" : ""}">${t} <i>${n}</i></button>`;
     }).join("");
     $("#fSt").querySelectorAll("button").forEach(b => b.onclick = () => { S.st = b.dataset.s; S.limit = 100; render(); });

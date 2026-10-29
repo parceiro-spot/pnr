@@ -13,3 +13,5 @@ O ⧉ ao lado do ID copia só o ID; o botão "Copiar ID, base e focal" (abaixo d
 Regionais: clique para marcar várias (ou "Todas"). 📷/📋 Print gera a imagem da lista atual. Abaixo do status há o seletor de Validador (LUIZA FRANÇA, KETHELLY, EDUARDA CARVALHO, VITÓRIA), que também sai no BAIXAR FORMS.
 
 O **validador do Forms tem prioridade**: ao baixar/subir o Forms de novo, se a resposta traz um validador diferente do que estava lá quando você alterou aqui (ex.: outra pessoa assumiu), vale o nome que está no Forms. Nomes que não estão na lista fixa aparecem normalmente no seletor.
+
+**Filtro de Validador** (aba Forms): abaixo das regionais, clique no seu nome (pode marcar mais de um) para ver só os pacotes em que você é o validador, junto com a situação e a regional escolhidas. "Todos" limpa o filtro e "(sem validador)" mostra os que ainda não têm ninguém. A escolha fica salva no navegador.
