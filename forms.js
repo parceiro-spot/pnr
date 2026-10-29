@@ -181,7 +181,7 @@
   let forms = null, A = null, tratando = null; // tratando = ID que você está tratando agora
   let edits = store.get("forms_edits", {}), byId = new Map();
   const SEM_VAL = "(sem validador)";
-  const S = { st: "PENDENTE", reg: new Set(), val: new Set(store.get("forms_val", [])), dt: "TUDO", sort: "rec", q: "", limit: 100 };
+  const S = { st: "PENDENTE", reg: new Set(), val: new Set(), dt: "TUDO", sort: "rec", q: "", limit: 100 };
   // nome do validador do pacote (usa o nome padrão da lista quando bate, senão o que veio do Forms)
   const valOf = c => { const v = String(c.last.validador || "").trim(); if (!v) return SEM_VAL; return VALIDADORES.find(x => N(x) === N(v)) || v; };
   const STATUS_TABS = [["PENDENTE", "A validar"], ["RECUSADA", "Recusadas"], ["ANEXADA", "Anexadas"], ["ANULADA", "Anuladas"], ["FATURADA", "Faturadas"], ["NÃO SUBIR", "Em análise"], ["TODOS", "Todas"]];
@@ -194,6 +194,10 @@
   document.querySelectorAll("#nav button").forEach(b => b.onclick = () => {
     document.querySelectorAll("#nav button").forEach(x => x.classList.toggle("on", x === b));
     document.querySelectorAll("#nav button").forEach(x => { $("#" + x.dataset.v).hidden = x.dataset.v !== b.dataset.v; });
+  });
+  document.querySelectorAll("#formsNav button").forEach(b => b.onclick = () => {
+    document.querySelectorAll("#formsNav button").forEach(x => x.classList.toggle("on", x === b));
+    document.querySelectorAll("#formsNav button").forEach(x => { $("#" + x.dataset.formView).hidden = x !== b; });
   });
 
   // ---------- leitura de arquivo ----------
@@ -228,7 +232,7 @@
     $("#fapp").hidden = !A.cols.id;
     const dts = [...new Set(A.cases.map(c => c.dia).filter(Boolean))].sort().reverse();
     $("#fDt").innerHTML = '<option value="TUDO">(Todas)</option>' + dts.map(d => `<option value="${d}">${fmtDay(d)}</option>`).join("");
-    S.dt = "TUDO"; S.limit = 100;
+    S.st = "PENDENTE"; S.reg.clear(); S.val.clear(); S.dt = "TUDO"; S.sort = "rec"; S.q = ""; S.limit = 100;
     refresh();
   }
   function reanalyze() { A = analyze(forms, edits); byId = new Map(A.cases.map(c => [c.id, c])); }
@@ -289,7 +293,7 @@
     $("#fVal").querySelectorAll("button").forEach(b => b.onclick = () => {
       const v = b.dataset.v;
       if (v === "TODOS") S.val.clear(); else if (S.val.has(v)) S.val.delete(v); else S.val.add(v);
-      store.set("forms_val", [...S.val]); S.limit = 100; render();
+      S.limit = 100; render();
     });
 
     $("#fSt").innerHTML = STATUS_TABS.map(([k, t]) => {

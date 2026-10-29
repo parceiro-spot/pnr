@@ -9,7 +9,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head><body><main>
 <div class="top"><h1>Análise PNR</h1><button id="theme"></button></div>
-<nav class="nav" id="nav"><button data-v="viewLost" class="on">📦 Análise PNR</button><button data-v="viewForms">📋 Análise Forms</button><button data-v="viewMsg">💬 Mensagem para Logistic</button></nav>
+<nav class="nav" id="nav"><button data-v="viewLost" class="on">📦 Análise PNR</button><button data-v="viewForms">📋 Análise Forms</button></nav>
 <section id="viewLost">
 <p class="sub">Suba as duas planilhas. O site refaz o seu tutorial (filtro de status, PROCX da rota no BSC, bases BRN/Null/ND) e monta os gráficos da Análise PNR.</p>
 
@@ -34,6 +34,8 @@
 </section>
 <section id="viewForms" hidden>
 <p class="sub">Suba o Forms baixado em <b>.ods</b> (ou .xlsx / .csv). O site junta as respostas por ID, conta quantas vezes cada pacote foi <b>recusado</b> e monta a fila para você trabalhar por regional. Em <b>Abrir Logistic</b> escolha <b>Normal</b> (copia o ID e abre o Logistic) ou <b>Anônimo</b> (copia o link para você colar numa janela anônima).</p>
+<nav class="nav form-nav" id="formsNav"><button data-form-view="formAnalysisTab" class="on">📋 Análise Forms</button><button data-form-view="formMessageTab">💬 Mensagem Logistic</button></nav>
+<div id="formAnalysisTab">
 <div class="drops">
 <label class="drop" id="fd1"><b>1 · Forms (.ods / .xlsx / .csv)</b><span id="fs1">clique ou arraste aqui</span><input type="file" accept=".ods,.xlsx,.xls,.csv" hidden id="ff1"></label>
 </div>
@@ -53,10 +55,11 @@
 <div id="fPanel"><div id="fTitle"></div><div id="fList"></div><div class="frow c"><button id="fMore" hidden>Mostrar mais</button></div></div>
 <details class="card fcase" id="fBadBox" hidden><summary id="fBadSum"></summary><div id="fBad"></div></details>
 </div>
-</section>
-<section id="viewMsg" hidden>
+</div>
+<div id="formMessageTab" hidden>
 <p class="sub">Mensagens prontas para o Logistic. Clique em <b>Copiar</b> (ou no cartão) e cole no caso.</p>
 <div id="msgList" class="msgs"></div>
+</div>
 </section>
 </main>
 <div id="modal" hidden><div class="mbox"><div class="mbar"><button id="mShot">📷 Baixar print</button><button id="mCopy">📋 Copiar print</button><button id="mClose">Fechar ✕</button></div><div id="dpanel"></div></div></div>
