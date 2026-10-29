@@ -49,21 +49,44 @@ function money(v) {
   return Number(s) || 0;
 }
 
-function load(file, st, cb, box) {
-  $(st).textContent = "lendo " + file.name + "…";
-  Papa.parse(file, {header: true, skipEmptyLines: true, complete: r => {
-    cb(r.data); $(st).textContent = file.name + " · " + r.data.length.toLocaleString("pt-BR") + " linhas";
-    $(box).classList.add("ok"); build();
-  }});
+// O BSC tem ~180 mil linhas x 36 colunas (35 MB). Ler tudo de uma vez travava a aba.
+// Agora lê em pedaços (a tela continua viva, com %) e guarda só ROTAS, XPT e SVC.
+const findKey = (r, names) => {
+  const norm = s => (s || "").replace(/^\uFEFF/, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const wanted = names.map(norm), keys = Object.keys(r || {});
+  return keys.find(k => wanted.includes(norm(k))) || keys.find(k => wanted.some(n => norm(k).includes(n)));
+};
+function bscKeep() {
+  let K = null;
+  return r => {
+    K ??= {rota: findKey(r, ["ROTAS", "IDROTA", "ID DA ROTA", "ROTA"]), xpt: findKey(r, ["XPT"]), svc: findKey(r, ["SVC"])};
+    return {ROTAS: r[K.rota], XPT: r[K.xpt], SVC: r[K.svc]};
+  };
 }
-function wire(box, input, st, cb) {
-  const go = f => f && load(f, st, cb, box);
+function load(file, st, cb, box, keep) {
+  $(st).textContent = "lendo " + file.name + "… 0%";
+  const out = [];
+  Papa.parse(file, {header: true, skipEmptyLines: true, chunkSize: 2 * 1024 * 1024,
+    chunk: res => {
+      for (const r of res.data) out.push(keep ? keep(r) : r);
+      $(st).textContent = "lendo " + file.name + "… " + Math.min(99, Math.round(res.meta.cursor / file.size * 100)) + "%";
+    },
+    complete: () => {
+      cb(out); $(st).textContent = file.name + " · " + out.length.toLocaleString("pt-BR") + " linhas";
+      $(box).classList.add("ok");
+      setTimeout(build, 30);
+    },
+    error: e => { $(st).textContent = "erro ao ler " + file.name + ": " + (e && e.message || e); }
+  });
+}
+function wire(box, input, st, cb, mkKeep) {
+  const go = f => f && load(f, st, cb, box, mkKeep && mkKeep());
   $(input).onchange = e => go(e.target.files[0]);
   $(box).ondragover = e => e.preventDefault();
   $(box).ondrop = e => { e.preventDefault(); go(e.dataTransfer.files[0]); };
 }
 wire("#d1", "#f1", "#s1", d => pnr = d);
-wire("#d2", "#f2", "#s2", d => bsc = d);
+wire("#d2", "#f2", "#s2", d => bsc = d, bscKeep);
 
 const vazio = v => { v = (v || "").toString().trim().toUpperCase(); return ["", "NULL", "ND", "#N/D"].includes(v) || v.startsWith("BRN"); };
 
@@ -75,8 +98,7 @@ function build() {
     const k = routeKey(field(r, ["ROTAS", "IDROTA", "ID DA ROTA", "ROTA"]));
     if (k && !mp.has(k)) mp.set(k, {
       xpt: field(r, ["XPT"]),
-      svc: field(r, ["SVC"]),
-      regional: getRegional(r)
+      svc: field(r, ["SVC"])
     });
   }
   rows = []; statusAll = {}; total = pnr.length;
