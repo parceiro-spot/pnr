@@ -130,7 +130,7 @@ const k = (t, v, s) => `<div class="k"><small>${t}</small><div>${v}</div><em>${s
 function seg(box, text, on, set) {
   const b = document.createElement("button"); b.textContent = text; b._on = on;
   b.className = on() ? "on" : "";
-  b.onclick = () => { set(); document.querySelectorAll(".seg button").forEach(x => x.classList.toggle("on", x._on())); render(); };
+  b.onclick = () => { set(); $(box).querySelectorAll("button").forEach(x => x.classList.toggle("on", x._on())); render(); };
   $(box).append(b);
 }
 // Escala de cor do Excel (2ª opção): menor = verde, mediana = amarelo, maior = vermelho
@@ -222,7 +222,7 @@ async function dl(c, name) {
   try { const D = window.claude && await claude.use("downloads"); if (D) { await D.save({filename: name, data: blob}); return; } } catch (e) { if (e && e.code === "declined") return; }
   const a = document.createElement("a"); a.download = name; a.href = URL.createObjectURL(blob); a.click();
 }
-const sync = () => document.querySelectorAll(".seg button").forEach(x => x.classList.toggle("on", x._on()));
+const sync = () => document.querySelectorAll("#fStatus button, #fTipo button").forEach(x => x.classList.toggle("on", x._on()));
 async function shot(copy, el, nm) {
   const c = await canvas(el);
   if (copy) {

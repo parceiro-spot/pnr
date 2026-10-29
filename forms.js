@@ -156,12 +156,14 @@
   // Monta o arquivo "igual ao Forms": mesmas colunas, com status e motivo da recusa preenchidos
   function applyEdits(rows, A) {
     const C = A.cols, out = rows.map(r => ({ ...r })), changes = [], seen = new Set();
+    // O Forms usa exatamente esta opção, sem acento.
+    const statusAnaliseForms = "EM ANALISE";
     for (const c of A.cases) {
       const l = c.last;
       if (!l.edited || seen.has(l.i)) continue;
       seen.add(l.i);
       const row = out[l.i];
-      if (l.statusOut !== undefined && C.status) row[C.status] = normStatus(l.statusOut) === "NÃO SUBIR" ? "EM ANÁLISE" : l.statusOut; // no Forms o nome da opção é EM ANÁLISE
+      if (l.statusOut !== undefined && C.status) row[C.status] = normStatus(l.statusOut) === "NÃO SUBIR" ? statusAnaliseForms : l.statusOut;
       if (l.motOut !== undefined && C.recusa) row[C.recusa] = l.motOut;
       if (l.valOut !== undefined && C.validador) row[C.validador] = l.valOut;
       changes.push({
@@ -189,10 +191,10 @@
   const S = { st: "PENDENTE", reg: new Set(), val: new Set(), dt: "TUDO", sort: "old", q: "", limit: 100 };
   // nome do validador do pacote (usa o nome padrão da lista quando bate, senão o que veio do Forms)
   const valOf = c => { const v = String(c.last.validador || "").trim(); if (!v) return SEM_VAL; return VALIDADORES.find(x => N(x) === N(v)) || v; };
-  const STATUS_TABS = [["PENDENTE", "A validar"], ["RECUSADA", "Recusadas"], ["ANEXADA", "Anexadas"], ["ANULADA", "Anuladas"], ["FATURADA", "Faturadas"], ["NÃO SUBIR", "Em análise"], ["TODOS", "Todas"]];
+  const STATUS_TABS = [["PENDENTE", "A validar"], ["RECUSADA", "Recusadas"], ["ANEXADA", "Anexadas"], ["ANULADA", "Anuladas"], ["FATURADA", "Faturadas"], ["NÃO SUBIR", "Em analise"], ["TODOS", "Todas"]];
   const BADGE = { PENDENTE: "b-pen", RECUSADA: "b-rec", ANEXADA: "b-ane", ANULADA: "b-anu", FATURADA: "b-fat", "NÃO SUBIR": "b-nsub" };
   const label = s => (STATUS_TABS.find(t => t[0] === s) || [0, s])[1];
-  const SING = { PENDENTE: "A validar", RECUSADA: "Recusada", ANEXADA: "Anexada", ANULADA: "Anulada", FATURADA: "Faturada", "NÃO SUBIR": "Em análise" };
+  const SING = { PENDENTE: "A validar", RECUSADA: "Recusada", ANEXADA: "Anexada", ANULADA: "Anulada", FATURADA: "Faturada", "NÃO SUBIR": "Em analise" };
   const badge = s => SING[s] || s;
 
   // navegação entre as abas
@@ -334,7 +336,7 @@
     const caso = `<div class="lgbox"><small>Abrir Logistic</small><div class="lgpair"><a class="btn pri" target="_blank" rel="noopener" href="${LOGISTIC_URL}" data-lg="${c.id}" title="Copia o ID e abre o Logistic no navegador normal">🌐 Normal ↗</a><button type="button" class="btn lgan" data-lga="${c.id}" title="Copia o link do Logistic para colar numa janela anônima">🕶 Anônimo</button></div></div>`;
     const msgTrat = `<div class="trat-msg"><select class="trat-msg-select" aria-label="Escolher mensagem para o Logistic"><option value="">Mensagem Logistic…</option>${MSGS.map(([t], i) => `<option value="${i}">${esc(t)}</option>`).join("")}</select><button type="button" class="mini" data-msg-copy="${c.id}">⧉ Copiar</button></div>`;
     const evid = u.length ? `<div class="fotos"><a class="btn ph" target="_blank" rel="noopener" href="${esc(u[0])}" title="Abrir a foto no Drive">📷 Ver foto</a>${u.slice(1).map((x, i) => `<a class="btn sm" target="_blank" rel="noopener" href="${esc(x)}" title="Abrir a foto ${i + 2}">📷 ${i + 2}</a>`).join("")}</div>` : (L.evid ? `<span class="mu" title="${esc(L.evid)}">arquivo sem link</span>` : "");
-    const SEL = [["RECUSADA", "RECUSADA"], ["ANEXADA", "ANEXADA"], ["ANULADA", "ANULADA"], ["FATURADA", "FATURADA"], ["NÃO SUBIR", "EM ANÁLISE"]];
+    const SEL = [["RECUSADA", "RECUSADA"], ["ANEXADA", "ANEXADA"], ["ANULADA", "ANULADA"], ["FATURADA", "FATURADA"], ["NÃO SUBIR", "EM ANALISE"]];
     const orig = L.edited ? L.origStatus : L.status;
     const extra = c.status !== "PENDENTE" && !SEL.some(x => x[0] === c.status) ? `<option value="${esc(c.status)}" selected>${esc(c.status)}</option>` : "";
     const sel = `<select class="stsel" data-sel="${c.id}" data-s="${esc(c.status)}" title="Marcar o status deste pacote">${orig === "PENDENTE" ? `<option value=""${c.status === "PENDENTE" ? " selected" : ""}>— A validar —</option>` : ""}${SEL.map(([v, t]) => `<option value="${v}"${c.status === v ? " selected" : ""}>${t}</option>`).join("")}${extra}</select>`;
