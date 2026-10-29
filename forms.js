@@ -442,50 +442,68 @@
   const todayKey = () => dayKey(new Date());
   const dmy = k => k.split("-").reverse().join("-");
   const cellTxt = v => v instanceof Date ? `${p2(v.getDate())}/${p2(v.getMonth() + 1)}/${v.getFullYear()} ${p2(v.getHours())}:${p2(v.getMinutes())}:${p2(v.getSeconds())}` : String(v ?? "");
+  const pad2 = p2;
+  const HORAS = [...Array(24).keys()];
+  $("#dlH1").innerHTML = HORAS.map(h => `<option value="${h}">a partir das ${pad2(h)}:00</option>`).join("");
+  $("#dlH2").innerHTML = HORAS.map(h => `<option value="${h}">até ${pad2(h)}:59</option>`).join("");
+  const atHour = (key, h, end) => { const [y, m, d] = key.split("-").map(Number); return end ? new Date(y, m - 1, d, h, 59, 59, 999) : new Date(y, m - 1, d, h, 0, 0, 0); };
   function dayData() {
     reanalyze();
-    const day = $("#dlDate").value, only = $("#dlOnly").checked, C = A.cols;
+    const C = A.cols, only = $("#dlOnly").checked, inc = $("#dlInc").checked;
+    const d1 = $("#dlDate").value, d2 = $("#dlDate2").value || d1;
+    const h1 = +$("#dlH1").value, h2 = +$("#dlH2").value;
+    const from = atHour(d1, h1, false), to = atHour(d2, h2, true);
     const { out } = Core.applyEdits(forms, A);
     const edIdx = new Set(A.cases.filter(c => c.last.edited).map(c => c.last.i));
     const header = [...new Set(forms.slice(0, 50).flatMap(r => Object.keys(r)))];
+    let nEd = 0, nExtra = 0;
     const rows = out.filter((r, i) => {
       const d = C.ts ? parseTs(r[C.ts]) : null;
-      return d && dayKey(d) === day && (!only || edIdx.has(i));
+      const inR = !!d && d >= from && d <= to, ed = edIdx.has(i);
+      const keep = only ? (ed && (inR || inc)) : (inR || (inc && ed));
+      if (keep && ed) { nEd++; if (!inR) nExtra++; }
+      return keep;
     });
-    const nEd = out.filter((r, i) => { const d = C.ts ? parseTs(r[C.ts]) : null; return d && dayKey(d) === day && edIdx.has(i); }).length;
-    return { rows, header, day, nEd };
+    const fmt = (k, h) => `${fmtDay(k).slice(0, 5)} ${pad2(h)}:00`;
+    const label = `${fmtDay(d1)} ${pad2(h1)}:00 → ${fmtDay(d2)} ${pad2(h2)}:59`;
+    const fullDays = h1 === 0 && h2 === 23;
+    const fname = d1 === d2 && fullDays ? `Forms_${dmy(d1)}.xlsx` : `Forms_${dmy(d1)}_${pad2(h1)}h_a_${dmy(d2)}_${pad2(h2)}h.xlsx`;
+    return { rows, header, label, fname, nEd, nExtra, bad: from > to };
   }
   function dlRefresh() {
     if (!forms || !A) { $("#dlInfo").textContent = "Suba o Forms primeiro."; return; }
-    const { rows, day, nEd } = dayData();
-    $("#dlInfo").innerHTML = `<b>${fmtDay(day)}</b>: ${rows.length} resposta${rows.length === 1 ? "" : "s"}${nEd ? ` · ${nEd} alterada${nEd === 1 ? "" : "s"} por você` : ""}`;
+    if ($("#dlDate2").value < $("#dlDate").value) $("#dlDate2").value = $("#dlDate").value;
+    const { rows, label, nEd, nExtra, bad } = dayData();
+    if (bad) { $("#dlInfo").textContent = "O fim do período está antes do começo."; $("#dlXlsx").disabled = $("#dlCopy").disabled = true; return; }
+    $("#dlInfo").innerHTML = `<b>${label}</b>: ${rows.length} resposta${rows.length === 1 ? "" : "s"}${nEd ? ` · ${nEd} alterada${nEd === 1 ? "" : "s"} por você` : ""}${nExtra ? ` (${nExtra} de outros dias)` : ""}`;
     $("#dlXlsx").disabled = $("#dlCopy").disabled = !rows.length;
   }
+  const setHoje = () => { const t = todayKey(); $("#dlDate").value = t; $("#dlDate2").value = t; $("#dlH1").value = 0; $("#dlH2").value = 23; };
+  const lockPeriodo = on => ["#dlDate", "#dlDate2", "#dlH1", "#dlH2"].forEach(s => { $(s).disabled = on; });
   $("#fDown").onclick = () => {
     if (!forms || !A) return;
-    $("#dlDate").value = todayKey(); $("#dlDate").disabled = true;
+    setHoje(); lockPeriodo(true);
     $("#dlTabs").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.d === "hoje"));
     $("#dl").hidden = false; dlRefresh();
   };
   $("#dlTabs").querySelectorAll("button").forEach(b => b.onclick = () => {
     $("#dlTabs").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
     const hoje = b.dataset.d === "hoje";
-    $("#dlDate").disabled = hoje; if (hoje) $("#dlDate").value = todayKey();
+    lockPeriodo(hoje); if (hoje) setHoje();
     dlRefresh();
   });
-  $("#dlDate").onchange = dlRefresh;
-  $("#dlOnly").onchange = dlRefresh;
+  ["#dlDate", "#dlDate2", "#dlH1", "#dlH2", "#dlOnly", "#dlInc"].forEach(s => { $(s).onchange = dlRefresh; });
   $("#dlClose").onclick = () => { $("#dl").hidden = true; };
   $("#dl").addEventListener("click", e => { if (e.target.id === "dl") $("#dlClose").onclick(); });
   $("#dlXlsx").onclick = async e => {
-    const { rows, header, day } = dayData(); if (!rows.length) return;
+    const { rows, header, fname } = dayData(); if (!rows.length) return;
     const clean = rows.map(r => { const o = {}; for (const k of header) if (r[k] !== "" && r[k] != null) o[k] = r[k]; return o; });
     const ws = XLSX.utils.json_to_sheet(clean, { header, dateNF: "dd/mm/yyyy hh:mm:ss", cellDates: true });
     ws["!cols"] = header.map(h => ({ wch: /EVID|MOTIVO/i.test(h) ? 40 : /CARIMBO/i.test(h) ? 20 : 18 }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Respostas ao formulário 1");
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "array", cellDates: true });
-    await saveBlob(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `Forms_${dmy(day)}.xlsx`);
+    await saveBlob(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), fname);
     flash(e.target, `✓ ${rows.length} linhas baixadas`);
   };
   // copia só as linhas (sem cabeçalho), separadas por tab: é só colar na primeira linha vazia da planilha do Forms

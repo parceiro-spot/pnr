@@ -62,9 +62,11 @@
 <div id="modal" hidden><div class="mbox"><div class="mbar"><button id="mShot">📷 Baixar print</button><button id="mCopy">📋 Copiar print</button><button id="mClose">Fechar ✕</button></div><div id="dpanel"></div></div></div>
 <div id="dl" class="ov" hidden><div class="dbox">
 <h2>⬇ Baixar Forms</h2>
-<p class="mu">Baixa as respostas do dia no mesmo formato do Forms (com os status e motivos que você marcou aqui), para anexar ou colar no Forms.</p>
-<div class="seg" id="dlTabs"><button data-d="hoje" class="on">Hoje</button><button data-d="outra">Escolher data</button></div>
-<div class="frow"><input type="date" id="dlDate"><label class="chk"><input type="checkbox" id="dlOnly"> Só as que eu alterei</label></div>
+<p class="mu">Baixa as respostas do período (data + hora) no mesmo formato do Forms (com os status e motivos que você marcou aqui), para anexar ou colar no Forms.</p>
+<div class="seg" id="dlTabs"><button data-d="hoje" class="on">Hoje</button><button data-d="outra">Escolher período</button></div>
+<div class="frow"><span class="mu">De</span><input type="date" id="dlDate"><select id="dlH1" title="A partir de (hora cheia)"></select></div>
+<div class="frow"><span class="mu">Até</span><input type="date" id="dlDate2"><select id="dlH2" title="Até o fim dessa hora"></select></div>
+<div class="frow"><label class="chk"><input type="checkbox" id="dlOnly"> Só as que eu alterei</label><label class="chk"><input type="checkbox" id="dlInc" checked> Incluir alteradas de outros dias</label></div>
 <div id="dlInfo" class="msg"></div>
 <div class="frow"><button id="dlXlsx" class="pri">⬇ Baixar .xlsx do dia</button><button id="dlCopy">⧉ Copiar para colar no Forms</button><button id="dlClose">Fechar ✕</button></div>
 </div></div>
