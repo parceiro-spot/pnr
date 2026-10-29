@@ -166,6 +166,20 @@ button.btn.lgan:hover{background:#1f2937;color:#fff;border-color:#1f2937}
 .fpanel{position:absolute;left:0;top:calc(100% + 6px);z-index:15;width:max-content;max-width:min(640px,92vw);background:var(--sf);border:1px solid var(--ln);border-radius:12px;padding:10px;box-shadow:0 10px 28px rgba(0,0,0,.18)}
 .fpanel[hidden]{display:none}
 #fSt button.on{background:var(--ac);border-color:var(--ac)}
+#fSt button[data-s="PENDENTE"]{background:#fff1c7;border-color:#e2bd45;color:#7a5700}
+#fSt button[data-s="RECUSADA"]{background:#ffd9d4;border-color:#e89a91;color:#9f241d}
+#fSt button[data-s="ANEXADA"]{background:#d8f1df;border-color:#83c894;color:#176b39}
+#fSt button[data-s="ANULADA"]{background:#dbe8ff;border-color:#8eafe8;color:#1f4f98}
+#fSt button[data-s="FATURADA"]{background:#eee2f8;border-color:#c9a9e5;color:#6b3fa0}
+#fSt button[data-s="NÃO SUBIR"]{background:#f7d7d5;border-color:#e39a95;color:#8f2821}
+#fSt button[data-s="TODOS"]{background:#e1eee9;border-color:#9bc5b5;color:#17624f}
+#fSt button[data-s="PENDENTE"].on{background:#c9a000;border-color:#c9a000;color:#fff}
+#fSt button[data-s="RECUSADA"].on{background:#b3261e;border-color:#b3261e;color:#fff}
+#fSt button[data-s="ANEXADA"].on{background:#1e7e4f;border-color:#1e7e4f;color:#fff}
+#fSt button[data-s="ANULADA"].on{background:#1f5fbf;border-color:#1f5fbf;color:#fff}
+#fSt button[data-s="FATURADA"].on{background:#8f65b5;border-color:#8f65b5;color:#fff}
+#fSt button[data-s="NÃO SUBIR"].on{background:#d86f6a;border-color:#d86f6a;color:#fff}
+#fSt button[data-s="TODOS"].on{background:var(--ac);border-color:var(--ac);color:#fff}
 
 /* TRATANDO */
 .fr.trat{border-left-color:#e6a100;box-shadow:0 0 0 2px rgba(230,161,0,.45)}

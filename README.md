@@ -8,7 +8,7 @@ Para mudar, edite a lista `REGIONAIS` no topo de `forms.js`.
 
 Na aba Forms cada pacote tem um seletor de status (RECUSADA, ANEXADA, ANULADA, FATURADA, EM ANÁLISE (sai como "EM ANÁLISE" no Forms)) e, se for recusada, um campo para escrever o motivo da recusa. O botão **BAIXAR FORMS** abre uma janela com **Hoje** / **Escolher data** e baixa (.xlsx) ou copia (para colar no Forms) todas as respostas daquele dia, com as mesmas colunas do Forms e com as marcações feitas aqui. A coluna Evidência mostra um botão 📷 que abre a foto do Drive.
 
-O ⧉ ao lado do ID copia só o ID; o botão "Copiar ID, base e focal" (abaixo da focal) copia "ID - BASE - FOCAL". O 📷 abre a foto direto no Drive. O motivo aparece resumido (ex.: "CLIENTE RECEBEU").
+O ⧉ ao lado do ID copia só o ID; o botão "Copiar mensagem ID, base e focal" copia `🚨 ID: ID - BASE - FOCAL` e, na linha seguinte, `Por favor, reenviar evidência.` O 📷 abre a foto direto no Drive. O motivo aparece resumido (ex.: "CLIENTE RECEBEU").
 
 Regionais: clique para marcar várias (ou "Todas"). 📷/📋 Print gera a imagem da lista atual. Abaixo do status há o seletor de Validador (LUIZA FRANÇA, KETHELLY, EDUARDA CARVALHO, VITÓRIA), que também sai no BAIXAR FORMS.
 
