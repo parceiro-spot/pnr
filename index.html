@@ -6,8 +6,11 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head><body><main>
 <div class="top"><h1>Análise PNR</h1><button id="theme"></button></div>
+<nav class="nav" id="nav"><button data-v="viewLost" class="on">📦 Análise PNR</button><button data-v="viewForms">📋 Análise Forms</button></nav>
+<section id="viewLost">
 <p class="sub">Suba as duas planilhas. O site refaz o seu tutorial (filtro de status, PROCX da rota no BSC, bases BRN/Null/ND) e monta os gráficos da Análise PNR.</p>
 
 <div class="drops">
@@ -28,7 +31,40 @@
 </div>
 <div id="panel"></div>
 </div>
+</section>
+<section id="viewForms" hidden>
+<p class="sub">Suba o Forms baixado em <b>.ods</b> (ou .xlsx / .csv). O site junta as respostas por ID, conta quantas vezes cada pacote foi <b>recusado</b> e monta a fila para você trabalhar por regional. O botão <b>Abrir Logistic</b> copia o ID do pacote e abre o Logistic: é só colar na busca.</p>
+<div class="drops">
+<label class="drop" id="fd1"><b>1 · Forms (.ods / .xlsx / .csv)</b><span id="fs1">clique ou arraste aqui</span><input type="file" accept=".ods,.xlsx,.xls,.csv" hidden id="ff1"></label>
+</div>
+<div id="finfo" class="msg"></div>
+<div id="fapp" hidden>
+<div id="fkpi"></div>
+<div class="fbar">
+<div><small>Regional (clique para marcar uma ou mais)</small><div id="fReg" class="chips"></div></div>
+</div>
+<div class="filters">
+<div><small>Situação do pacote</small><div id="fSt" class="seg"></div></div>
+<div><small>Data do último envio</small><select id="fDt"></select></div>
+<div><small>Buscar</small><input id="fQ" type="search" placeholder="ID, base, motorista…"></div>
+<span class="sp"></span>
+<button id="fCopyIds">⧉ Copiar IDs da lista</button><button id="fShot">📷 Baixar print</button><button id="fCopyPrint">📋 Copiar print</button><button id="fClear">↩ Desfazer alterações</button><button id="fDown" class="pri">⬇ BAIXAR FORMS</button>
+</div>
+
+<div id="fPanel"><div id="fTitle"></div><div id="fList"></div><div class="frow c"><button id="fMore" hidden>Mostrar mais</button></div></div>
+<details class="card fcase" id="fBadBox" hidden><summary id="fBadSum"></summary><div id="fBad"></div></details>
+</div>
+</section>
 </main>
 <div id="modal" hidden><div class="mbox"><div class="mbar"><button id="mShot">📷 Baixar print</button><button id="mCopy">📋 Copiar print</button><button id="mClose">Fechar ✕</button></div><div id="dpanel"></div></div></div>
+<div id="dl" class="ov" hidden><div class="dbox">
+<h2>⬇ Baixar Forms</h2>
+<p class="mu">Baixa as respostas do dia no mesmo formato do Forms (com os status e motivos que você marcou aqui), para anexar ou colar no Forms.</p>
+<div class="seg" id="dlTabs"><button data-d="hoje" class="on">Hoje</button><button data-d="outra">Escolher data</button></div>
+<div class="frow"><input type="date" id="dlDate"><label class="chk"><input type="checkbox" id="dlOnly"> Só as que eu alterei</label></div>
+<div id="dlInfo" class="msg"></div>
+<div class="frow"><button id="dlXlsx" class="pri">⬇ Baixar .xlsx do dia</button><button id="dlCopy">⧉ Copiar para colar no Forms</button><button id="dlClose">Fechar ✕</button></div>
+</div></div>
 <script src="script.js"></script>
+<script src="forms.js"></script>
 </body></html>

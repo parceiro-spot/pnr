@@ -6,9 +6,9 @@ const brl = v => v.toLocaleString("pt-BR", {style: "currency", currency: "BRL"})
 const ddmm = d => d.split("-").reverse().join("/");
 const isXPT = b => (b || "").toString().trim().toUpperCase().startsWith("E");
 const regionBases = {
-  "ESPÍRITO SANTO": { xpt: ["EES"], svc: ["SES"] },
+  "ESPÍRITO SANTO": { xpt: ["EES", "EBA"], svc: ["SES"] },
   "MINAS GERAIS": { xpt: ["EMG"], svc: ["SMG"] },
-  "NORDESTE": { xpt: ["EBA"], svc: ["SBA"] },
+  "NORDESTE": { xpt: [], svc: ["SBA"] },
   "RIO DE JANEIRO": { xpt: ["ERJ"], svc: ["SRJ"] },
   "SÃO PAULO": { xpt: [], svc: ["SSP"] }
 };
