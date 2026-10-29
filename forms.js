@@ -127,7 +127,7 @@
       // alterações feitas no site (status / motivo da recusa) valem para o último envio do ID
       const ed = edits && edits[id];
       if (ed && ed.t === (last.ts ? last.ts.getTime() : 0)) {
-        const cp = { ...last, edited: true, origStatus: last.status, origMot: last.motRecusa, origVal: last.validador };
+        const cp = { ...last, edited: true, editAt: ed.at || 0, origStatus: last.status, origMot: last.motRecusa, origVal: last.validador };
         if (ed.s) { cp.status = normStatus(ed.s); cp.statusOut = ed.s; }
         if (ed.m !== undefined) { cp.motRecusa = ed.m; cp.motOut = ed.m; }
         // O validador do Forms tem prioridade: se o Forms baixado agora traz outro validador
@@ -178,7 +178,7 @@
     get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } }
   };
-  let forms = null, A = null;
+  let forms = null, A = null, tratando = null; // tratando = ID que você está tratando agora
   let edits = store.get("forms_edits", {}), byId = new Map();
   const SEM_VAL = "(sem validador)";
   const S = { st: "PENDENTE", reg: new Set(), val: new Set(store.get("forms_val", [])), dt: "TUDO", sort: "rec", q: "", limit: 100 };
@@ -193,9 +193,7 @@
   // navegação entre as abas
   document.querySelectorAll("#nav button").forEach(b => b.onclick = () => {
     document.querySelectorAll("#nav button").forEach(x => x.classList.toggle("on", x === b));
-    $("#viewLost").hidden = b.dataset.v !== "viewLost";
-    $("#viewForms").hidden = b.dataset.v !== "viewForms";
-    
+    document.querySelectorAll("#nav button").forEach(x => { $("#" + x.dataset.v).hidden = x.dataset.v !== b.dataset.v; });
   });
 
   // ---------- leitura de arquivo ----------
@@ -298,7 +296,14 @@
       const n = all.filter(c => (!S.reg.size || S.reg.has(c.regiao)) && valOk(c) && (k === "TODOS" || c.status === k)).length;
       return `<button data-s="${k}" class="${S.st === k ? "on" : ""}">${t} <i>${n}</i></button>`;
     }).join("");
-    $("#fSt").querySelectorAll("button").forEach(b => b.onclick = () => { S.st = b.dataset.s; S.limit = 100; render(); });
+    $("#fSt").querySelectorAll("button").forEach(b => b.onclick = () => { S.st = b.dataset.s; S.limit = 100; OPEN.fSt = false; render(); });
+    // botões minimizados: mostram só a escolha atual; clicando abre as opções
+    const nSt = all.filter(c => (!S.reg.size || S.reg.has(c.regiao)) && valOk(c) && (S.st === "TODOS" || c.status === S.st)).length;
+    const tog = (id, txt, n, act) => { const t = $("#" + id + "T"); t.innerHTML = `${esc(txt)} <i>${n}</i> <span class="car">▾</span>`; t.classList.toggle("act", act); };
+    tog("fReg", reg.size ? [...reg].join(" + ") : "Todas", reg.size ? base.filter(c => reg.has(c.regiao)).length : base.length, reg.size > 0);
+    tog("fVal", S.val.size ? [...S.val].join(" + ") : "Todos", S.val.size ? vbase.filter(c => S.val.has(valOf(c))).length : vbase.length, S.val.size > 0);
+    tog("fSt", label(S.st), nSt, false);
+    foldSync();
     $("#fTitle").innerHTML = `<h2 class="ttl">${label(S.st)} · ${!reg.size ? "todas as regionais" : [...reg].join(" + ")}</h2><p class="tsub">${list.length.toLocaleString("pt-BR")} pacotes · ${list.filter(c => c.recusas > 0).length} já recusados antes</p>`;
   }
   function renderList(list) {
@@ -325,14 +330,43 @@
     const vsel = `<select class="valsel" data-val="${c.id}" data-v="${esc(N(vNow))}" title="Quem validou este pacote">${vNow ? "" : '<option value="" selected>— Validador —</option>'}${VALIDADORES.map(v => `<option value="${v}"${N(v) === N(vNow) ? " selected" : ""}>${v}</option>`).join("")}${vExtra}</select>`;
     const mr = c.status === "RECUSADA" ? `<input class="mr" data-mr="${c.id}" placeholder="Motivo da recusa (escreva aqui)" value="${esc(L.motRecusa)}">` : "";
     const hist = `<div class="h hh">${c.recusas}× recusada neste ID · ${c.tent} envio${c.tent > 1 ? "s" : ""}</div>` + c.att.map((a, ix) => ({ a, ix })).reverse().map(({ a, ix }) => `<div class="h"><span>${fmtDT(a.ts)}</span><span>${esc(a.validador) || "—"}</span><span class="bd ${BADGE[a.status] || ""}">${esc(badge(a.status))}</span><span>${esc(prettyMotivo(a.motivo)) || "—"}</span>${a.urls.length ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(a.urls[0])}" title="Abrir a foto desse envio">📷</a>` : ""}${a.motRecusa ? `<em>Motivo da recusa: ${esc(a.motRecusa)}</em>` : ""}</div>`).join("");
-    return `<div class="fr${c.recusas >= 2 ? " hot" : ""}${L.edited ? " ed" : ""}" data-id="${c.id}">
+    return `<div class="fr${c.recusas >= 2 ? " hot" : ""}${L.edited ? " ed" : ""}${c.id === tratando ? " trat" : ""}" data-id="${c.id}">
   <div class="c1"><b class="idv">${c.id}</b><button class="mini" data-cp="${c.id}" title="Copiar ID">⧉</button><div class="mu">${c.code ? esc(c.code) + " · " : ""}${esc(c.regiao)}${c.lote ? " · enviado em lote" : ""}</div>${L.focal ? `<div class="mu focal">Focal: ${esc(L.focal)}</div>` : ""}<button class="mini cpall" data-cpall="${c.id}" title="Copia ID - Base - Focal">⧉ Copiar ID, base e focal</button></div>
   <div class="c2">${sel} ${rec}${L.edited ? ' <span class="edtag">✎ editado</span>' : ""}<div class="vrow">${vsel}</div><div class="mu">${c.tent} envio${c.tent > 1 ? "s" : ""} · último ${fmtDT(L.ts)}</div></div>
-  <div class="c3"><div class="mot" title="${esc(L.motivo)}">${esc(prettyMotivo(L.motivo)) || "—"}</div><div class="mu">Motorista: ${esc(L.motorista) || "—"}</div>${mr}</div>
+  <div class="c3"><div class="mot" title="${esc(L.motivo)}">${esc(prettyMotivo(L.motivo)) || "—"}</div><div class="mu">Motorista: ${esc(L.motorista) || "—"}</div>${c.id === tratando ? tratTag(c.id) : ""}${mr}</div>
   <div class="c4">${caso}${evid}${c.tent > 1 ? `<button class="mini" data-h="${c.id}">Histórico (${c.tent})</button>` : ""}</div>
   <div class="hist" hidden>${hist}</div>
 </div>`;
   }
+
+  // ---------- filtros minimizados ----------
+  const OPEN = { fReg: false, fVal: false, fSt: false };
+  function foldSync() { for (const k in OPEN) { $("#" + k).hidden = !OPEN[k]; $("#" + k + "T").classList.toggle("open", OPEN[k]); } }
+  document.querySelectorAll(".ftog").forEach(t => t.onclick = () => {
+    const k = t.id.slice(0, -1), v = !OPEN[k];
+    for (const x in OPEN) OPEN[x] = false;
+    OPEN[k] = v; foldSync();
+  });
+  // clicar fora fecha (mousedown, antes de a lista ser redesenhada)
+  document.addEventListener("mousedown", e => { if (!e.target.closest(".fold") && Object.values(OPEN).some(Boolean)) { for (const x in OPEN) OPEN[x] = false; foldSync(); } });
+
+  // ---------- TRATANDO ----------
+  const tratTag = id => `<span class="trat-tag" data-untrat="${id}" title="Clique para tirar o TRATANDO">TRATANDO ✕</span>`;
+  function markTrat(id) {
+    if (tratando === id) return;
+    tratando = id;
+    document.querySelectorAll("#fList .fr.trat").forEach(r => { r.classList.remove("trat"); const t = r.querySelector(".trat-tag"); if (t) t.remove(); });
+    if (!id) return;
+    const row = document.querySelector(`#fList .fr[data-id="${id}"]`);
+    if (row) { row.classList.add("trat"); row.querySelector(".c3").insertAdjacentHTML("beforeend", tratTag(id)); }
+  }
+  // copiar o ID ou clicar em qualquer coisa da linha marca o pacote como TRATANDO; ao mexer em outro, sai do anterior; clicar na etiqueta tira
+  $("#fList").addEventListener("click", e => {
+    if (e.target.closest("[data-untrat]")) { markTrat(null); return; }
+    const row = e.target.closest(".fr"); if (row) markTrat(row.dataset.id);
+  });
+  $("#fList").addEventListener("focusin", e => { const row = e.target.closest(".fr"); if (row) markTrat(row.dataset.id); });
+  $("#fCopyIds").addEventListener("click", () => markTrat(null));
 
   // ---------- eventos ----------
   const copy = async t => {
@@ -372,7 +406,7 @@
   const tOf = c => (c.last.ts ? c.last.ts.getTime() : 0);
   const curEdit = c => (edits[c.id] && edits[c.id].t === tOf(c) ? edits[c.id] : { t: tOf(c) });
   function keepEdit(c, ed) {
-    if (ed.s === undefined && ed.m === undefined && ed.v === undefined) delete edits[c.id]; else edits[c.id] = ed;
+    if (ed.s === undefined && ed.m === undefined && ed.v === undefined) delete edits[c.id]; else { ed.at = Date.now(); edits[c.id] = ed; } // 'at' = quando você mexeu (usado no BAIXAR FORMS)
     store.set("forms_edits", edits);
   }
   function saveReason(el, final) {
@@ -449,33 +483,35 @@
   const atHour = (key, h, end) => { const [y, m, d] = key.split("-").map(Number); return end ? new Date(y, m - 1, d, h, 59, 59, 999) : new Date(y, m - 1, d, h, 0, 0, 0); };
   function dayData() {
     reanalyze();
-    const C = A.cols, only = $("#dlOnly").checked, inc = $("#dlInc").checked;
+    const C = A.cols, only = $("#dlOnly").checked;
     const d1 = $("#dlDate").value, d2 = $("#dlDate2").value || d1;
     const h1 = +$("#dlH1").value, h2 = +$("#dlH2").value;
     const from = atHour(d1, h1, false), to = atHour(d2, h2, true);
     const { out } = Core.applyEdits(forms, A);
     const edIdx = new Set(A.cases.filter(c => c.last.edited).map(c => c.last.i));
     const header = [...new Set(forms.slice(0, 50).flatMap(r => Object.keys(r)))];
-    let nEd = 0, nExtra = 0;
+    let nEd = 0;
     const rows = out.filter((r, i) => {
       const d = C.ts ? parseTs(r[C.ts]) : null;
       const inR = !!d && d >= from && d <= to, ed = edIdx.has(i);
-      const keep = only ? (ed && (inR || inc)) : (inR || (inc && ed));
-      if (keep && ed) { nEd++; if (!inR) nExtra++; }
+      // O período é definido pelo carimbo original do Forms. Editar uma resposta antiga
+      // não pode fazer essa resposta aparecer no arquivo de uma data diferente.
+      const keep = inR && (!only || ed);
+      if (keep && ed) nEd++;
       return keep;
     });
     const fmt = (k, h) => `${fmtDay(k).slice(0, 5)} ${pad2(h)}:00`;
     const label = `${fmtDay(d1)} ${pad2(h1)}:00 → ${fmtDay(d2)} ${pad2(h2)}:59`;
     const fullDays = h1 === 0 && h2 === 23;
     const fname = d1 === d2 && fullDays ? `Forms_${dmy(d1)}.xlsx` : `Forms_${dmy(d1)}_${pad2(h1)}h_a_${dmy(d2)}_${pad2(h2)}h.xlsx`;
-    return { rows, header, label, fname, nEd, nExtra, bad: from > to };
+    return { rows, header, label, fname, nEd, bad: from > to };
   }
   function dlRefresh() {
     if (!forms || !A) { $("#dlInfo").textContent = "Suba o Forms primeiro."; return; }
     if ($("#dlDate2").value < $("#dlDate").value) $("#dlDate2").value = $("#dlDate").value;
-    const { rows, label, nEd, nExtra, bad } = dayData();
+    const { rows, label, nEd, bad } = dayData();
     if (bad) { $("#dlInfo").textContent = "O fim do período está antes do começo."; $("#dlXlsx").disabled = $("#dlCopy").disabled = true; return; }
-    $("#dlInfo").innerHTML = `<b>${label}</b>: ${rows.length} resposta${rows.length === 1 ? "" : "s"}${nEd ? ` · ${nEd} alterada${nEd === 1 ? "" : "s"} por você` : ""}${nExtra ? ` (${nExtra} de outros dias)` : ""}`;
+    $("#dlInfo").innerHTML = `<b>${label}</b>: ${rows.length} resposta${rows.length === 1 ? "" : "s"}${nEd ? ` · ${nEd} alterada${nEd === 1 ? "" : "s"} por você` : ""}`;
     $("#dlXlsx").disabled = $("#dlCopy").disabled = !rows.length;
   }
   const setHoje = () => { const t = todayKey(); $("#dlDate").value = t; $("#dlDate2").value = t; $("#dlH1").value = 0; $("#dlH2").value = 23; };
@@ -492,7 +528,7 @@
     lockPeriodo(hoje); if (hoje) setHoje();
     dlRefresh();
   });
-  ["#dlDate", "#dlDate2", "#dlH1", "#dlH2", "#dlOnly", "#dlInc"].forEach(s => { $(s).onchange = dlRefresh; });
+  ["#dlDate", "#dlDate2", "#dlH1", "#dlH2", "#dlOnly"].forEach(s => { $(s).onchange = dlRefresh; });
   $("#dlClose").onclick = () => { $("#dl").hidden = true; };
   $("#dl").addEventListener("click", e => { if (e.target.id === "dl") $("#dlClose").onclick(); });
   $("#dlXlsx").onclick = async e => {
@@ -513,4 +549,18 @@
     await copy(tsv); flash(e.target, `✓ ${rows.length} linhas copiadas`);
   };
   document.addEventListener("keydown", e => { if (e.key === "Escape") $("#dl").hidden = true; });
+
+  // ---------- Mensagem para Logistic ----------
+  const MSGS = [
+    ["Entregue", "O vendedor confirma o recebimento do produto"],
+    ["PNR Cartão", "O vendedor confirma recebimento do cartão."],
+    ["Baixado pelo Meli", "A baixa de entrega não foi feita pelo driver"],
+    ["Produto diferente", "A entrega foi realizada corretamente, porém o vendedor enviou o produto diferente do que foi comprado"],
+    ["Faltante", "O vendedor enviou o pedido incompleto para o cliente."]
+  ];
+  $("#msgList").innerHTML = MSGS.map(([t, m], i) => `<div class="msgc" data-m="${i}"><h3>${esc(t)}</h3><p>${esc(m)}</p><button type="button" class="mini">⧉ Copiar</button></div>`).join("");
+  $("#msgList").addEventListener("click", e => {
+    const c = e.target.closest(".msgc"); if (!c) return;
+    copy(MSGS[+c.dataset.m][1]); flash(c.querySelector("button"), "✓ copiado");
+  });
 })(typeof window !== "undefined" ? window : globalThis);

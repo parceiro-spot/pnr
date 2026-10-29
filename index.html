@@ -9,7 +9,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head><body><main>
 <div class="top"><h1>Análise PNR</h1><button id="theme"></button></div>
-<nav class="nav" id="nav"><button data-v="viewLost" class="on">📦 Análise PNR</button><button data-v="viewForms">📋 Análise Forms</button></nav>
+<nav class="nav" id="nav"><button data-v="viewLost" class="on">📦 Análise PNR</button><button data-v="viewForms">📋 Análise Forms</button><button data-v="viewMsg">💬 Mensagem para Logistic</button></nav>
 <section id="viewLost">
 <p class="sub">Suba as duas planilhas. O site refaz o seu tutorial (filtro de status, PROCX da rota no BSC, bases BRN/Null/ND) e monta os gráficos da Análise PNR.</p>
 
@@ -40,14 +40,10 @@
 <div id="finfo" class="msg"></div>
 <div id="fapp" hidden>
 <div id="fkpi"></div>
-<div class="fbar">
-<div><small>Regional (clique para marcar uma ou mais)</small><div id="fReg" class="chips"></div></div>
-</div>
-<div class="fbar">
-<div><small>Validador (clique no seu nome para ver só os seus pacotes)</small><div id="fVal" class="chips"></div></div>
-</div>
 <div class="filters">
-<div><small>Situação do pacote</small><div id="fSt" class="seg"></div></div>
+<div class="fold"><small>Regional</small><button type="button" class="ftog" id="fRegT"></button><div id="fReg" class="chips fpanel" hidden></div></div>
+<div class="fold"><small>Validador</small><button type="button" class="ftog" id="fValT"></button><div id="fVal" class="chips fpanel" hidden></div></div>
+<div class="fold"><small>Situação do pacote</small><button type="button" class="ftog" id="fStT"></button><div id="fSt" class="chips fpanel" hidden></div></div>
 <div><small>Data do último envio</small><select id="fDt"></select></div>
 <div><small>Buscar</small><input id="fQ" type="search" placeholder="ID, base, motorista…"></div>
 <span class="sp"></span>
@@ -58,15 +54,19 @@
 <details class="card fcase" id="fBadBox" hidden><summary id="fBadSum"></summary><div id="fBad"></div></details>
 </div>
 </section>
+<section id="viewMsg" hidden>
+<p class="sub">Mensagens prontas para o Logistic. Clique em <b>Copiar</b> (ou no cartão) e cole no caso.</p>
+<div id="msgList" class="msgs"></div>
+</section>
 </main>
 <div id="modal" hidden><div class="mbox"><div class="mbar"><button id="mShot">📷 Baixar print</button><button id="mCopy">📋 Copiar print</button><button id="mClose">Fechar ✕</button></div><div id="dpanel"></div></div></div>
 <div id="dl" class="ov" hidden><div class="dbox">
 <h2>⬇ Baixar Forms</h2>
-<p class="mu">Baixa as respostas do período (data + hora) no mesmo formato do Forms (com os status e motivos que você marcou aqui), para anexar ou colar no Forms.</p>
+<p class="mu">Baixa somente as respostas cujo carimbo de data/hora está no período selecionado, no mesmo formato do Forms. As alterações feitas aqui são aplicadas às respectivas respostas.</p>
 <div class="seg" id="dlTabs"><button data-d="hoje" class="on">Hoje</button><button data-d="outra">Escolher período</button></div>
 <div class="frow"><span class="mu">De</span><input type="date" id="dlDate"><select id="dlH1" title="A partir de (hora cheia)"></select></div>
 <div class="frow"><span class="mu">Até</span><input type="date" id="dlDate2"><select id="dlH2" title="Até o fim dessa hora"></select></div>
-<div class="frow"><label class="chk"><input type="checkbox" id="dlOnly"> Só as que eu alterei</label><label class="chk"><input type="checkbox" id="dlInc" checked> Incluir alteradas de outros dias</label></div>
+<div class="frow"><label class="chk"><input type="checkbox" id="dlOnly"> Só as que eu alterei</label></div>
 <div id="dlInfo" class="msg"></div>
 <div class="frow"><button id="dlXlsx" class="pri">⬇ Baixar .xlsx do dia</button><button id="dlCopy">⧉ Copiar para colar no Forms</button><button id="dlClose">Fechar ✕</button></div>
 </div></div>
