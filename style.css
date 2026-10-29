@@ -98,7 +98,8 @@ button.mini{padding:3px 8px;font-size:12px}
 .hist .h{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:3px 0}.hist .h em{color:#d9463b;font-style:normal}
 @media(max-width:900px){.fr{grid-template-columns:1fr}}
 
-.idv.cpd::after{content:" ✓ copiado";font:600 11px "Segoe UI",sans-serif;color:var(--ac)}
+.idv.cpd::after{content:" ✓ copiado";font:600 11px "Segoe UI",sans-serif;color:var(--ac);animation:cpdfade 2s ease forwards}
+@keyframes cpdfade{0%{opacity:0;transform:translateX(-4px)}12%{opacity:1;transform:none}75%{opacity:1}100%{opacity:0}}
 
 /* status marcável (mesmas cores das opções do Forms) */
 .stsel{font-weight:700;font-size:12px;letter-spacing:.03em;text-transform:uppercase;border:0;border-radius:999px;padding:6px 10px;cursor:pointer;background:#c9a000;color:#fff;max-width:100%}

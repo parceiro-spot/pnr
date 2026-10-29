@@ -328,6 +328,12 @@
     el.textContent = msg; el.classList.add("show");
     clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove("show"), 7000);
   };
+  // mostra "✓ copiado" ao lado do ID por ~2s (com fade) e some sozinho
+  const markCopied = el => {
+    const r = el.closest(".fr"), idv = r && r.querySelector(".idv"); if (!idv) return;
+    idv.classList.remove("cpd"); void idv.offsetWidth; idv.classList.add("cpd");
+    clearTimeout(idv._cpt); idv._cpt = setTimeout(() => idv.classList.remove("cpd"), 2000);
+  };
   const flash = (el, t) => { const o = el.textContent; el.textContent = t; setTimeout(() => el.textContent = o, 900); };
   // Clicar em "Abrir Logistic" copia o ID do pacote e abre a página do Logistic (é só colar o ID na busca)
   $("#fList").addEventListener("click", e => {
@@ -338,10 +344,10 @@
       const c = byId.get(t.dataset.cpall), L = c ? c.last : null;
       if (c) { copy([c.id, c.code || L.baseRaw, L.focal].filter(Boolean).join(" - ")); flash(t, "✓ copiado"); }
     }
-    if (t.dataset.lg) { copy(t.dataset.lg); const r = t.closest(".fr"); if (r) r.querySelector(".idv").classList.add("cpd"); }
+    if (t.dataset.lg) { copy(t.dataset.lg); markCopied(t); }
     if (t.dataset.lga) {
       // Navegador não permite abrir janela anônima por script: copia o link e orienta a colar numa janela anônima
-      copy(LOGISTIC_URL); const r = t.closest(".fr"); if (r) r.querySelector(".idv").classList.add("cpd");
+      copy(LOGISTIC_URL); markCopied(t);
       toast("🕶 Link do Logistic copiado. Abra uma janela anônima (Ctrl+Shift+N), cole o link (Ctrl+V) e depois copie o ID no ⧉ ao lado do pacote " + t.dataset.lga + ".");
     }
     if (t.dataset.h) { const h = t.closest(".fr").querySelector(".hist"); h.hidden = !h.hidden; }
