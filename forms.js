@@ -332,6 +332,7 @@
     const L = c.last, u = L.urls;
     const rec = c.recusas === 0 ? "" : `<span class="rec ${c.recusas >= 3 ? "r3" : c.recusas === 2 ? "r2" : "r1"}">${c.recusas >= 3 ? "⚠ " : ""}${c.recusas}× recusada</span>`;
     const caso = `<div class="lgbox"><small>Abrir Logistic</small><div class="lgpair"><a class="btn pri" target="_blank" rel="noopener" href="${LOGISTIC_URL}" data-lg="${c.id}" title="Copia o ID e abre o Logistic no navegador normal">🌐 Normal ↗</a><button type="button" class="btn lgan" data-lga="${c.id}" title="Copia o link do Logistic para colar numa janela anônima">🕶 Anônimo</button></div></div>`;
+    const msgTrat = `<div class="trat-msg"><select class="trat-msg-select" aria-label="Escolher mensagem para o Logistic"><option value="">Mensagem Logistic…</option>${MSGS.map(([t], i) => `<option value="${i}">${esc(t)}</option>`).join("")}</select><button type="button" class="mini" data-msg-copy="${c.id}">⧉ Copiar</button></div>`;
     const evid = u.length ? `<div class="fotos"><a class="btn ph" target="_blank" rel="noopener" href="${esc(u[0])}" title="Abrir a foto no Drive">📷 Ver foto</a>${u.slice(1).map((x, i) => `<a class="btn sm" target="_blank" rel="noopener" href="${esc(x)}" title="Abrir a foto ${i + 2}">📷 ${i + 2}</a>`).join("")}</div>` : (L.evid ? `<span class="mu" title="${esc(L.evid)}">arquivo sem link</span>` : "");
     const SEL = [["RECUSADA", "RECUSADA"], ["ANEXADA", "ANEXADA"], ["ANULADA", "ANULADA"], ["FATURADA", "FATURADA"], ["NÃO SUBIR", "EM ANÁLISE"]];
     const orig = L.edited ? L.origStatus : L.status;
@@ -345,7 +346,7 @@
   <div class="c1"><b class="idv">${c.id}</b><button class="mini" data-cp="${c.id}" title="Copiar ID">⧉</button><div class="mu">${c.code ? esc(c.code) + " · " : ""}${esc(c.regiao)}${c.lote ? " · enviado em lote" : ""}</div>${L.focal ? `<div class="mu focal">Focal: ${esc(L.focal)}</div>` : ""}<button class="mini cpall" data-cpall="${c.id}" title="Copia ID - Base - Focal">⧉ Copiar ID, base e focal</button></div>
   <div class="c2">${sel} ${rec}${L.edited ? ' <span class="edtag">✎ editado</span>' : ""}<div class="vrow">${vsel}</div><div class="mu">${c.tent} envio${c.tent > 1 ? "s" : ""} · último ${fmtDT(L.ts)}</div></div>
   <div class="c3"><div class="mot" title="${esc(L.motivo)}">${esc(prettyMotivo(L.motivo)) || "—"}</div><div class="mu">Motorista: ${esc(L.motorista) || "—"}</div>${c.id === tratando ? tratTag(c.id) : ""}${mr}</div>
-  <div class="c4">${caso}${evid}${c.tent > 1 ? `<button class="mini" data-h="${c.id}">Histórico (${c.tent})</button>` : ""}</div>
+  <div class="c4">${caso}${msgTrat}${evid}${c.tent > 1 ? `<button class="mini" data-h="${c.id}">Histórico (${c.tent})</button>` : ""}</div>
   <div class="hist" hidden>${hist}</div>
 </div>`;
   }
@@ -399,7 +400,7 @@
   const flash = (el, t) => { const o = el.textContent; el.textContent = t; setTimeout(() => el.textContent = o, 900); };
   // Clicar em "Abrir Logistic" copia o ID do pacote e abre a página do Logistic (é só colar o ID na busca)
   $("#fList").addEventListener("click", e => {
-    const t = e.target.closest("[data-cp],[data-cpall],[data-h],[data-lg],[data-lga]");
+    const t = e.target.closest("[data-cp],[data-cpall],[data-h],[data-lg],[data-lga],[data-msg-copy]");
     if (!t) return;
     if (t.dataset.cp) { copy(t.dataset.cp); flash(t, "✓"); }
     if (t.dataset.cpall) {
@@ -411,6 +412,12 @@
       // Navegador não permite abrir janela anônima por script: copia o link e orienta a colar numa janela anônima
       copy(LOGISTIC_URL); markCopied(t);
       toast("🕶 Link do Logistic copiado. Abra uma janela anônima (Ctrl+Shift+N), cole o link (Ctrl+V) e depois copie o ID no ⧉ ao lado do pacote " + t.dataset.lga + ".");
+    }
+    if (t.dataset.msgCopy) {
+      const select = t.closest(".trat-msg")?.querySelector(".trat-msg-select");
+      const index = select && select.value !== "" ? Number(select.value) : -1;
+      if (index >= 0 && MSGS[index]) { copy(MSGS[index][1]); flash(t, "✓ copiado"); }
+      else toast("Escolha uma mensagem do Logistic antes de copiar.");
     }
     if (t.dataset.h) { const h = t.closest(".fr").querySelector(".hist"); h.hidden = !h.hidden; }
   });
