@@ -124,17 +124,22 @@
     for (const [id, att] of by) {
       att.sort((a, b) => ((a.ts?.getTime() || 0) - (b.ts?.getTime() || 0)) || a.i - b.i);
       let last = att[att.length - 1];
-      // alterações feitas no site (status / motivo da recusa) valem para o último envio do ID
+      // O Forms prevalece sobre edições locais se o campo mudou desde o snapshot salvo.
       const ed = edits && edits[id];
       if (ed && ed.t === (last.ts ? last.ts.getTime() : 0)) {
-        const cp = { ...last, edited: true, editAt: ed.at || 0, origStatus: last.status, origMot: last.motRecusa, origVal: last.validador };
-        if (ed.s) { cp.status = normStatus(ed.s); cp.statusOut = ed.s; }
-        if (ed.m !== undefined) { cp.motRecusa = ed.m; cp.motOut = ed.m; }
-        // O validador do Forms tem prioridade: se o Forms baixado agora traz outro validador
-        // diferente do que existia quando a alteração foi feita aqui, vale o do Forms.
-        const formsMudouVal = ed.v !== undefined && ed.ov !== undefined && N(ed.ov) !== N(last.validador);
-        if (ed.v !== undefined && !formsMudouVal) { cp.validador = ed.v; cp.valOut = ed.v; }
-        if (cp.statusOut !== undefined || cp.motOut !== undefined || cp.valOut !== undefined) { att[att.length - 1] = cp; last = cp; }
+        // Edições antigas sem snapshot são descartadas com segurança: não dá para saber
+        // se outra pessoa já atualizou o Forms antes de este arquivo ser carregado.
+        if (ed.s !== undefined && (ed.os === undefined || normStatus(ed.os) !== last.status)) { delete ed.s; delete ed.os; }
+        if (ed.m !== undefined && (ed.om === undefined || String(ed.om ?? "") !== String(last.motRecusa ?? ""))) { delete ed.m; delete ed.om; }
+        if (ed.v !== undefined && (ed.ov === undefined || N(ed.ov) !== N(last.validador))) { delete ed.v; delete ed.ov; }
+        if (ed.s === undefined && ed.m === undefined && ed.v === undefined) delete edits[id];
+        else {
+          const cp = { ...last, edited: true, editAt: ed.at || 0, origStatus: last.status, origMot: last.motRecusa, origVal: last.validador };
+          if (ed.s) { cp.status = normStatus(ed.s); cp.statusOut = ed.s; }
+          if (ed.m !== undefined) { cp.motRecusa = ed.m; cp.motOut = ed.m; }
+          if (ed.v !== undefined) { cp.validador = ed.v; cp.valOut = ed.v; }
+          att[att.length - 1] = cp; last = cp;
+        }
       }
       let code = "";
       for (let k = att.length - 1; k >= 0 && !code; k--) code = att[k].codes[0] || "";
@@ -181,7 +186,7 @@
   let forms = null, A = null, tratando = null; // tratando = ID que você está tratando agora
   let edits = store.get("forms_edits", {}), byId = new Map();
   const SEM_VAL = "(sem validador)";
-  const S = { st: "PENDENTE", reg: new Set(), val: new Set(), dt: "TUDO", sort: "rec", q: "", limit: 100 };
+  const S = { st: "PENDENTE", reg: new Set(), val: new Set(), dt: "TUDO", sort: "old", q: "", limit: 100 };
   // nome do validador do pacote (usa o nome padrão da lista quando bate, senão o que veio do Forms)
   const valOf = c => { const v = String(c.last.validador || "").trim(); if (!v) return SEM_VAL; return VALIDADORES.find(x => N(x) === N(v)) || v; };
   const STATUS_TABS = [["PENDENTE", "A validar"], ["RECUSADA", "Recusadas"], ["ANEXADA", "Anexadas"], ["ANULADA", "Anuladas"], ["FATURADA", "Faturadas"], ["NÃO SUBIR", "Em análise"], ["TODOS", "Todas"]];
@@ -232,10 +237,10 @@
     $("#fapp").hidden = !A.cols.id;
     const dts = [...new Set(A.cases.map(c => c.dia).filter(Boolean))].sort().reverse();
     $("#fDt").innerHTML = '<option value="TUDO">(Todas)</option>' + dts.map(d => `<option value="${d}">${fmtDay(d)}</option>`).join("");
-    S.st = "PENDENTE"; S.reg.clear(); S.val.clear(); S.dt = "TUDO"; S.sort = "rec"; S.q = ""; S.limit = 100;
+    S.st = "PENDENTE"; S.reg.clear(); S.val.clear(); S.dt = "TUDO"; S.sort = "old"; S.q = ""; S.limit = 100;
     refresh();
   }
-  function reanalyze() { A = analyze(forms, edits); byId = new Map(A.cases.map(c => [c.id, c])); }
+  function reanalyze() { A = analyze(forms, edits); store.set("forms_edits", edits); byId = new Map(A.cases.map(c => [c.id, c])); }
   function refresh() { if (A) render(); }
 
   // ---------- filtros ----------
@@ -332,7 +337,7 @@
     const sel = `<select class="stsel" data-sel="${c.id}" data-s="${esc(c.status)}" title="Marcar o status deste pacote">${orig === "PENDENTE" ? `<option value=""${c.status === "PENDENTE" ? " selected" : ""}>— A validar —</option>` : ""}${SEL.map(([v, t]) => `<option value="${v}"${c.status === v ? " selected" : ""}>${t}</option>`).join("")}${extra}</select>`;
     const vNow = L.validador || "", vExtra = vNow && !VALIDADORES.some(v => N(v) === N(vNow)) ? `<option value="${esc(vNow)}" selected>${esc(vNow)}</option>` : "";
     const vsel = `<select class="valsel" data-val="${c.id}" data-v="${esc(N(vNow))}" title="Quem validou este pacote">${vNow ? "" : '<option value="" selected>— Validador —</option>'}${VALIDADORES.map(v => `<option value="${v}"${N(v) === N(vNow) ? " selected" : ""}>${v}</option>`).join("")}${vExtra}</select>`;
-    const mr = c.status === "RECUSADA" ? `<input class="mr" data-mr="${c.id}" placeholder="Motivo da recusa (escreva aqui)" value="${esc(L.motRecusa)}">` : "";
+    const mr = ["RECUSADA", "NÃO SUBIR"].includes(c.status) ? `<input class="mr" data-mr="${c.id}" placeholder="${c.status === "NÃO SUBIR" ? "Motivo da análise (escreva aqui)" : "Motivo da recusa (escreva aqui)"}" value="${esc(L.motRecusa)}">` : "";
     const hist = `<div class="h hh">${c.recusas}× recusada neste ID · ${c.tent} envio${c.tent > 1 ? "s" : ""}</div>` + c.att.map((a, ix) => ({ a, ix })).reverse().map(({ a, ix }) => `<div class="h"><span>${fmtDT(a.ts)}</span><span>${esc(a.validador) || "—"}</span><span class="bd ${BADGE[a.status] || ""}">${esc(badge(a.status))}</span><span>${esc(prettyMotivo(a.motivo)) || "—"}</span>${a.urls.length ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(a.urls[0])}" title="Abrir a foto desse envio">📷</a>` : ""}${a.motRecusa ? `<em>Motivo da recusa: ${esc(a.motRecusa)}</em>` : ""}</div>`).join("");
     return `<div class="fr${c.recusas >= 2 ? " hot" : ""}${L.edited ? " ed" : ""}${c.id === tratando ? " trat" : ""}" data-id="${c.id}">
   <div class="c1"><b class="idv">${c.id}</b><button class="mini" data-cp="${c.id}" title="Copiar ID">⧉</button><div class="mu">${c.code ? esc(c.code) + " · " : ""}${esc(c.regiao)}${c.lote ? " · enviado em lote" : ""}</div>${L.focal ? `<div class="mu focal">Focal: ${esc(L.focal)}</div>` : ""}<button class="mini cpall" data-cpall="${c.id}" title="Copia ID - Base - Focal">⧉ Copiar ID, base e focal</button></div>
@@ -416,7 +421,7 @@
   function saveReason(el, final) {
     const c = byId.get(el.dataset.mr); if (!c) return;
     const ed = curEdit(c), origMot = c.last.edited ? c.last.origMot : c.last.motRecusa;
-    if (el.value === origMot) delete ed.m; else ed.m = el.value;
+    if (el.value === origMot) { delete ed.m; delete ed.om; } else { ed.m = el.value; ed.om = origMot; }
     keepEdit(c, ed);
     if (final) { reanalyze(); renderTop(currentList()); }
   }
@@ -430,8 +435,9 @@
       const origV = c.last.edited ? c.last.origVal : c.last.validador;
       if (el.value === "" || N(el.value) === N(origV)) { delete ed.v; delete ed.ov; } else { ed.v = el.value; ed.ov = origV || ""; }
     } else {
-      if (el.value === "" || normStatus(el.value) === orig) delete ed.s; else ed.s = el.value;
-      if ((ed.s ? normStatus(ed.s) : orig) !== "RECUSADA") delete ed.m;
+      if (el.value === "" || normStatus(el.value) === orig) { delete ed.s; delete ed.os; }
+      else { ed.s = el.value; ed.os = orig; }
+      if (!["RECUSADA", "NÃO SUBIR"].includes(ed.s ? normStatus(ed.s) : orig)) { delete ed.m; delete ed.om; }
     }
     keepEdit(c, ed); reanalyze();
     // troca só essa linha (ela continua na lista até você mudar o filtro) e atualiza os contadores
