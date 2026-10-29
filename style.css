@@ -94,6 +94,8 @@ input[type=search]{min-width:200px}
 a.btn,button.mini{display:inline-block;font:inherit;font-size:13px;font-weight:600;text-decoration:none;color:var(--tx);border:1px solid var(--ln);background:var(--sf);padding:6px 12px;border-radius:8px;cursor:pointer}
 a.btn.pri{background:var(--ac2);border-color:var(--ac2);color:#fff}
 button.mini{padding:3px 8px;font-size:12px}
+.remove-id{color:#b3261e;border-color:#f0a39c;font-weight:700}
+.remove-id:hover{background:#b3261e;color:#fff;border-color:#b3261e}
 .ci{display:flex;gap:6px}.ci input{width:130px;padding:5px 8px;font-size:13px}
 .hist{grid-column:1/-1;border-top:1px dashed var(--ln);padding-top:8px;font-size:12px}
 .hist[hidden]{display:none}

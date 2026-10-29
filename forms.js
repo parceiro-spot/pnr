@@ -12,6 +12,8 @@
   ];
   const SEM_REG = "Sem regional";
   const VALIDADORES = ["LUIZA FRANÇA", "KETHELLY", "EDUARDA CARVALHO", "VITÓRIA"];
+  const DEFAULT_EXCLUDED_IDS = ["47495708033"];
+  let excludedIds = new Set(DEFAULT_EXCLUDED_IDS);
 
   const N = s => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -112,6 +114,8 @@
         focal: String(g(r, C.focal) ?? "").trim(), motorista: String(g(r, C.motorista) ?? "").trim(),
         email: String(g(r, C.email) ?? "").trim(), motRecusa: String(g(r, C.recusa) ?? "").trim()
       };
+      it.ids = it.ids.filter(id => !excludedIds.has(id));
+      if (!it.ids.length && idRaw) return;
       if (!it.ids.length) { invalid.push(it); return; }
       items.push(it);
     });
@@ -186,6 +190,8 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } }
   };
   let forms = null, A = null, tratando = null; // tratando = ID que você está tratando agora
+  excludedIds = new Set(store.get("forms_excluded_ids", DEFAULT_EXCLUDED_IDS));
+  DEFAULT_EXCLUDED_IDS.forEach(id => excludedIds.add(id));
   let edits = store.get("forms_edits", {}), byId = new Map();
   const SEM_VAL = "(sem validador)";
   const S = { st: "PENDENTE", reg: new Set(), val: new Set(), dt: "TUDO", sort: "old", q: "", limit: 100 };
@@ -244,7 +250,12 @@
     S.st = "PENDENTE"; S.reg.clear(); S.val.clear(); S.dt = "TUDO"; S.sort = "old"; S.q = ""; S.limit = 100;
     refresh();
   }
-  function reanalyze() { A = analyze(forms, edits); store.set("forms_edits", edits); byId = new Map(A.cases.map(c => [c.id, c])); }
+  function reanalyze() {
+    A = analyze(forms, edits);
+    store.set("forms_edits", edits);
+    store.set("forms_excluded_ids", [...excludedIds]);
+    byId = new Map(A.cases.map(c => [c.id, c]));
+  }
   function refresh() { if (A) render(); }
 
   // ---------- filtros ----------
@@ -345,7 +356,7 @@
     const mr = ["RECUSADA", "NÃO SUBIR"].includes(c.status) ? `<input class="mr" data-mr="${c.id}" placeholder="${c.status === "NÃO SUBIR" ? "Motivo da análise (escreva aqui)" : "Motivo da recusa (escreva aqui)"}" value="${esc(L.motRecusa)}">` : "";
     const hist = `<div class="h hh">${c.recusas}× recusada neste ID · ${c.tent} envio${c.tent > 1 ? "s" : ""}</div>` + c.att.map((a, ix) => ({ a, ix })).reverse().map(({ a, ix }) => `<div class="h"><span>${fmtDT(a.ts)}</span><span>${esc(a.validador) || "—"}</span><span class="bd ${BADGE[a.status] || ""}">${esc(badge(a.status))}</span><span>${esc(prettyMotivo(a.motivo)) || "—"}</span>${a.urls.length ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(a.urls[0])}" title="Abrir a foto desse envio">📷</a>` : ""}${a.motRecusa ? `<em>Motivo da recusa: ${esc(a.motRecusa)}</em>` : ""}</div>`).join("");
     return `<div class="fr${c.recusas >= 2 ? " hot" : ""}${L.edited ? " ed" : ""}${c.id === tratando ? " trat" : ""}" data-id="${c.id}">
-  <div class="c1"><b class="idv">${c.id}</b><button class="mini" data-cp="${c.id}" title="Copiar ID">⧉</button><div class="mu">${c.code ? esc(c.code) + " · " : ""}${esc(c.regiao)}${c.lote ? " · enviado em lote" : ""}</div>${L.focal ? `<div class="mu focal">Focal: ${esc(L.focal)}</div>` : ""}<button class="mini cpall" data-cpall="${c.id}" title="Copia ID - Base - Focal">⧉ Copiar ID, base e focal</button></div>
+  <div class="c1"><b class="idv">${c.id}</b><button class="mini" data-cp="${c.id}" title="Copiar ID">⧉</button><button class="mini remove-id" data-remove="${c.id}" title="Remover este ID da análise e das cópias">✕</button><div class="mu">${c.code ? esc(c.code) + " · " : ""}${esc(c.regiao)}${c.lote ? " · enviado em lote" : ""}</div>${L.focal ? `<div class="mu focal">Focal: ${esc(L.focal)}</div>` : ""}<button class="mini cpall" data-cpall="${c.id}" title="Copia ID - Base - Focal">⧉ Copiar ID, base e focal</button></div>
   <div class="c2">${sel} ${rec}${L.edited ? ' <span class="edtag">✎ editado</span>' : ""}<div class="vrow">${vsel}</div><div class="mu">${c.tent} envio${c.tent > 1 ? "s" : ""} · último ${fmtDT(L.ts)}</div></div>
   <div class="c3"><div class="mot" title="${esc(L.motivo)}">${esc(prettyMotivo(L.motivo)) || "—"}</div><div class="mu">Motorista: ${esc(L.motorista) || "—"}</div>${c.id === tratando ? tratTag(c.id) : ""}${mr}</div>
   <div class="c4">${caso}${msgTrat}${evid}${c.tent > 1 ? `<button class="mini" data-h="${c.id}">Histórico (${c.tent})</button>` : ""}</div>
@@ -373,6 +384,16 @@
     if (!id) return;
     const row = document.querySelector(`#fList .fr[data-id="${id}"]`);
     if (row) { row.classList.add("trat"); row.querySelector(".c3").insertAdjacentHTML("beforeend", tratTag(id)); }
+  }
+  function removeId(id) {
+    if (!id) return;
+    excludedIds.add(String(id));
+    delete edits[id];
+    store.set("forms_excluded_ids", [...excludedIds]);
+    tratando = tratando === id ? null : tratando;
+    reanalyze();
+    render();
+    toast(`ID ${id} removido da análise e das cópias.`);
   }
   // copiar o ID ou clicar em qualquer coisa da linha marca o pacote como TRATANDO; ao mexer em outro, sai do anterior; clicar na etiqueta tira
   $("#fList").addEventListener("click", e => {
@@ -402,6 +423,8 @@
   const flash = (el, t) => { const o = el.textContent; el.textContent = t; setTimeout(() => el.textContent = o, 900); };
   // Clicar em "Abrir Logistic" copia o ID do pacote e abre a página do Logistic (é só colar o ID na busca)
   $("#fList").addEventListener("click", e => {
+    const remove = e.target.closest("[data-remove]");
+    if (remove) { e.preventDefault(); e.stopPropagation(); removeId(remove.dataset.remove); return; }
     const t = e.target.closest("[data-cp],[data-cpall],[data-h],[data-lg],[data-lga],[data-msg-copy]");
     if (!t) return;
     if (t.dataset.cp) { copy(t.dataset.cp); flash(t, "✓"); }
@@ -513,6 +536,8 @@
     const header = [...new Set(forms.slice(0, 50).flatMap(r => Object.keys(r)))];
     let nEd = 0;
     const rows = out.filter((r, i) => {
+      const ids = C.id ? extractIds(r[C.id]) : [];
+      if (ids.some(id => excludedIds.has(id))) return false;
       const d = C.ts ? parseTs(r[C.ts]) : null;
       const inR = !!d && d >= from && d <= to, ed = edIdx.has(i);
       // O período é definido pelo carimbo original do Forms. Editar uma resposta antiga
