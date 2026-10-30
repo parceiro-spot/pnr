@@ -231,6 +231,18 @@
     const wb = XLSX.read(buf, { type: "array", cellDates: false });
     return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "", raw: true });
   }
+  const rowKey = r => JSON.stringify(Object.keys(r || {}).sort().map(k => [k, r[k]]));
+  function mergeForms(next) {
+    const all = Array.isArray(forms) ? forms.slice() : [];
+    const seen = new Set(all.map(rowKey));
+    for (const row of next || []) {
+      const key = rowKey(row);
+      if (!seen.has(key)) { all.push(row); seen.add(key); }
+    }
+    forms = all;
+    store.set("forms_rows", forms);
+    return forms.length;
+  }
   function wire(box, input, st, cb) {
     const go = async f => {
       if (!f) return;
@@ -243,19 +255,39 @@
     $(box).ondrop = e => { e.preventDefault(); go(e.dataTransfer.files[0]); };
   }
   wire("#fd1", "#ff1", "#fs1", async f => {
-    forms = await readForms(f);
-    $("#fs1").textContent = f.name + " · " + forms.length.toLocaleString("pt-BR") + " linhas";
+    const incoming = await readForms(f);
+    const before = Array.isArray(forms) ? forms.length : 0;
+    const total = mergeForms(incoming);
+    const added = total - before;
+    $("#fs1").textContent = `${f.name} · ${total.toLocaleString("pt-BR")} linhas salvas${added ? ` · +${added.toLocaleString("pt-BR")} novas` : ""}`;
     analyzeNow();
   });
   function analyzeNow() {
     if (!forms) { $("#finfo").textContent = "Suba o Forms para começar."; return; }
+    const firstLoad = !A;
+    const savedView = firstLoad ? store.get("forms_view_state", {}) : {};
     reanalyze();
     $("#finfo").textContent = A.cols.id ? "" : "Não achei a coluna “ID” no arquivo. Confira se é o Forms baixado.";
     $("#fapp").hidden = !A.cols.id;
     const dts = [...new Set(A.cases.map(c => c.dia).filter(Boolean))].sort().reverse();
     $("#fDt").innerHTML = '<option value="TUDO">(Todas)</option>' + dts.map(d => `<option value="${d}">${fmtDay(d)}</option>`).join("");
-    S.st = "PENDENTE"; S.reg.clear(); S.val.clear(); S.dt = "TUDO"; S.sort = "old"; S.q = ""; S.limit = 100;
+    if (firstLoad) {
+      S.st = savedView.st || "PENDENTE";
+      S.reg = new Set(Array.isArray(savedView.reg) ? savedView.reg : []);
+      S.val = new Set(Array.isArray(savedView.val) ? savedView.val : []);
+      S.dt = savedView.dt || "TUDO";
+      S.sort = savedView.sort || "old";
+      S.q = savedView.q || "";
+    }
+    if (S.dt !== "TUDO" && !dts.includes(S.dt)) S.dt = "TUDO";
+    $("#fDt").value = S.dt;
     refresh();
+  }
+  const savedForms = store.get("forms_rows", null);
+  if (Array.isArray(savedForms) && savedForms.length) {
+    forms = savedForms;
+    $("#fs1").textContent = `Forms salvo · ${forms.length.toLocaleString("pt-BR")} linhas`;
+    analyzeNow();
   }
   function reanalyze() {
     A = analyze(forms, edits);
@@ -263,7 +295,10 @@
     store.set("forms_excluded_ids", [...excludedIds]);
     byId = new Map(A.cases.map(c => [c.id, c]));
   }
-  function refresh() { if (A) render(); }
+  function saveViewState() {
+    store.set("forms_view_state", { st: S.st, reg: [...S.reg], val: [...S.val], dt: S.dt, sort: S.sort, q: S.q });
+  }
+  function refresh() { if (A) { saveViewState(); render(); } }
 
   // ---------- filtros ----------
   const matches = (c, skip) => {
@@ -633,21 +668,42 @@
 
   // ---------- Mensagem para Logistic ----------
   const DEFAULT_MSGS = [
-    ["Entregue", "O vendedor confirma o recebimento do produto"],
-    ["PNR Cartão", "O vendedor confirma recebimento do cartão."],
+    ["Entregue", "O cliente confirma o recebimento do produto"],
+    ["PNR Cartão", "O cliente confirma recebimento do cartão."],
     ["Baixado pelo Meli", "A baixa de entrega não foi feita pelo driver"],
-    ["Produto diferente", "A entrega foi realizada corretamente, porém o vendedor enviou o produto diferente do que foi comprado"],
-    ["Item faltante", "O vendedor enviou o pedido incompleto para o cliente."]
+    ["Produto diferente", "A entrega foi realizada corretamente, porém o cliente enviou o produto diferente do que foi comprado"],
+    ["Item faltante", "O cliente enviou o pedido incompleto para o cliente."]
   ];
-  const savedMsgs = store.get("forms_custom_msgs", []);
-  let MSGS = DEFAULT_MSGS.concat(Array.isArray(savedMsgs) ? savedMsgs.filter(x => Array.isArray(x) && x.length >= 2 && String(x[0]).trim() && String(x[1]).trim()) : []);
+  const validMsgs = value => Array.isArray(value) ? value.filter(x => Array.isArray(x) && x.length >= 2 && String(x[0]).trim() && String(x[1]).trim()).map(x => [String(x[0]), String(x[1])]) : [];
+  const savedMsgs = store.get("forms_msgs", null);
+  const oldCustomMsgs = store.get("forms_custom_msgs", []);
+  let MSGS = savedMsgs !== null ? validMsgs(savedMsgs) : DEFAULT_MSGS.concat(validMsgs(oldCustomMsgs));
+  function persistMsgs() {
+    store.set("forms_msgs", MSGS);
+    // Mantém compatibilidade com versões anteriores que só salvavam mensagens adicionadas.
+    store.set("forms_custom_msgs", MSGS.slice(DEFAULT_MSGS.length));
+  }
   function renderMsgs() {
-    $("#msgList").innerHTML = MSGS.map(([t, m], i) => `<div class="msgc" data-m="${i}"><h3>${esc(t)}</h3><p>${esc(m)}</p><button type="button" class="mini">⧉ Copiar</button></div>`).join("");
+    $("#msgList").innerHTML = MSGS.map(([t, m], i) => `<div class="msgc" data-m="${i}"><label>Título<input class="msg-title" type="text" maxlength="80" value="${esc(t)}"></label><label>Mensagem<textarea class="msg-text" rows="4" maxlength="1000">${esc(m)}</textarea></label><div class="msg-actions"><button type="button" class="mini" data-msg-save>Salvar alterações</button><button type="button" class="mini" data-msg-copy>⧉ Copiar</button></div></div>`).join("");
   }
   renderMsgs();
   $("#msgList").addEventListener("click", e => {
     const c = e.target.closest(".msgc"); if (!c) return;
-    copy(MSGS[+c.dataset.m][1]); flash(c.querySelector("button"), "✓ copiado");
+    const i = +c.dataset.m;
+    if (e.target.closest("[data-msg-save]")) {
+      const title = c.querySelector(".msg-title").value.trim();
+      const text = c.querySelector(".msg-text").value.trim();
+      if (!title || !text) { alert("Preencha o título e a mensagem antes de salvar."); return; }
+      MSGS[i] = [title, text];
+      persistMsgs();
+      renderMsgs();
+      if (A) render();
+      toast("Mensagem Logistic atualizada.");
+      return;
+    }
+    if (e.target.closest("[data-msg-copy]")) {
+      copy(MSGS[i][1]); flash(e.target.closest("[data-msg-copy]"), "✓ copiado");
+    }
   });
   $("#msgAdd").onclick = () => { $("#msgForm").hidden = false; $("#msgTitle").focus(); };
   $("#msgCancel").onclick = () => { $("#msgForm").hidden = true; $("#msgTitle").value = ""; $("#msgText").value = ""; };
@@ -655,7 +711,7 @@
     const title = $("#msgTitle").value.trim(), text = $("#msgText").value.trim();
     if (!title || !text) { alert("Preencha o título e a mensagem antes de salvar."); return; }
     MSGS.push([title, text]);
-    store.set("forms_custom_msgs", MSGS.slice(DEFAULT_MSGS.length));
+    persistMsgs();
     renderMsgs();
     $("#msgCancel").onclick();
     if (A) render();

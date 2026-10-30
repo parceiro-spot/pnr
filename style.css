@@ -188,11 +188,13 @@ button.btn.lgan:hover{background:#1f2937;color:#fff;border-color:#1f2937}
 
 /* Mensagens para o Logistic */
 .msgs{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
-.msgc{background:var(--sf);border:1px solid var(--ln);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px;cursor:pointer}
+.msgc{background:var(--sf);border:1px solid var(--ln);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px}
 .msgc:hover{border-color:var(--ac)}
-.msgc h3{margin:0;font:700 15px Georgia,serif}
-.msgc p{margin:0;flex:1;line-height:1.45}
-.msgc button{align-self:flex-start;font-weight:700}
+.msgc label{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:13px}
+.msgc input,.msgc textarea{font:inherit;font-weight:400;border:1px solid var(--ln);background:var(--bg);color:var(--tx);padding:8px 10px;border-radius:8px;resize:vertical}
+.msgc textarea{min-height:92px;line-height:1.45}
+.msg-actions{display:flex;gap:8px;flex-wrap:wrap}
+.msgc button{font-weight:700}
 .msg-form h3{margin:0 0 10px;font-size:15px}
 .msg-form-grid{display:grid;grid-template-columns:minmax(180px,.7fr) minmax(280px,1.3fr);gap:12px}
 .msg-form label{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:13px}
