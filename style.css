@@ -80,6 +80,10 @@ input[type=search]{min-width:200px}
 .fr.ed{border-left-color:#3b6fd9}
 .fr.selected{box-shadow:0 0 0 3px rgba(14,107,92,.35);background:linear-gradient(90deg,rgba(14,107,92,.12),var(--sf) 42%)}
 .fr.trat{position:relative;z-index:1;box-shadow:0 0 0 3px rgba(230,161,0,.32),0 10px 26px rgba(0,0,0,.12)}
+#fList.has-tratando{position:relative}
+#fList.has-tratando::before{content:"";position:fixed;inset:0;background:rgba(18,25,23,.28);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);z-index:20;pointer-events:auto}
+#fList.has-tratando .fr:not(.trat){filter:blur(4px);opacity:.38}
+#fList.has-tratando .fr.trat{position:fixed;left:50%;top:50%;width:min(1100px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;margin:0;transform:translate(-50%,-50%);z-index:21;background:var(--sf);box-shadow:0 0 0 3px rgba(230,161,0,.5),0 18px 60px rgba(0,0,0,.38)}
 .idv{font:700 17px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.02em}
 .c1 .mini{margin-left:6px}
 .c2{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.c2 .mu{flex-basis:100%}
