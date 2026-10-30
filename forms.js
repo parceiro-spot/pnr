@@ -265,20 +265,20 @@
   function analyzeNow() {
     if (!forms) { $("#finfo").textContent = "Suba o Forms para começar."; return; }
     const firstLoad = !A;
-    const savedView = firstLoad ? store.get("forms_view_state", {}) : {};
-    const hasSavedView = firstLoad && savedView.version === 2;
     reanalyze();
     $("#finfo").textContent = A.cols.id ? "" : "Não achei a coluna “ID” no arquivo. Confira se é o Forms baixado.";
     $("#fapp").hidden = !A.cols.id;
     const dts = [...new Set(A.cases.map(c => c.dia).filter(Boolean))].sort().reverse();
     $("#fDt").innerHTML = '<option value="TUDO">(Todas)</option>' + dts.map(d => `<option value="${d}">${fmtDay(d)}</option>`).join("");
     if (firstLoad) {
-      S.st = hasSavedView ? (savedView.st || "TODOS") : "TODOS";
-      S.reg = new Set(hasSavedView && Array.isArray(savedView.reg) ? savedView.reg : []);
-      S.val = new Set(hasSavedView && Array.isArray(savedView.val) ? savedView.val : []);
-      S.dt = hasSavedView && savedView.dt ? savedView.dt : (dts.includes(dayKey(new Date())) ? dayKey(new Date()) : "TUDO");
-      S.sort = hasSavedView ? (savedView.sort || "old") : "old";
-      S.q = hasSavedView ? (savedView.q || "") : "";
+      // Ao abrir ou atualizar a página, começa sempre no dia atual.
+      // O usuário pode trocar para outro dia ou para “Todas” no seletor.
+      S.st = "TODOS";
+      S.reg = new Set();
+      S.val = new Set();
+      S.dt = dts.includes(dayKey(new Date())) ? dayKey(new Date()) : "TUDO";
+      S.sort = "old";
+      S.q = "";
     }
     if (S.dt !== "TUDO" && !dts.includes(S.dt)) S.dt = "TUDO";
     $("#fDt").value = S.dt;
@@ -303,12 +303,13 @@
 
   // ---------- filtros ----------
   const matches = (c, skip) => {
-    if (skip !== "st" && S.st !== "TODOS" && c.status !== S.st) return false;
+    // Uma busca explícita deve encontrar o pacote independentemente da situação selecionada.
+    if (!S.q && skip !== "st" && S.st !== "TODOS" && c.status !== S.st) return false;
     if (skip !== "reg" && S.reg.size && !S.reg.has(c.regiao)) return false;
     if (skip !== "val" && S.val.size && !S.val.has(valOf(c))) return false;
     if (S.dt !== "TUDO" && c.dia !== S.dt) return false;
     if (S.q) {
-      const q = N(S.q), hay = N([c.id, c.code, c.regiao, c.last.motorista, c.last.focal, c.last.motivo, c.last.validador].join(" "));
+      const q = N(S.q), hay = N([c.id, c.code, c.regiao, c.status, c.last.motorista, c.last.focal, c.last.motivo, c.last.motRecusa, c.last.validador, ...c.recusaMotivos].join(" "));
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -323,12 +324,14 @@
   const currentList = () => A.cases.filter(c => matches(c)).sort(sorters[S.sort]);
   function render() { const list = currentList(); renderTop(list); renderList(list); }
   function renderTop(list) {
-    const all = A.cases, reg = S.reg;
+    // Os números dos cartões e dos filtros acompanham a data selecionada.
+    const all = S.dt === "TUDO" ? A.cases : A.cases.filter(c => c.dia === S.dt), reg = S.reg;
     const valOk = c => !S.val.size || S.val.has(valOf(c));
     const inReg = all.filter(c => (!reg.size || reg.has(c.regiao)) && valOk(c));
     const cnt = (fn, l = inReg) => l.filter(fn).length;
+    const responseCount = S.dt === "TUDO" ? A.rowsTotal : all.reduce((n, c) => n + c.att.filter(a => dayKey(a.ts) === S.dt).length, 0);
     $("#fkpi").innerHTML = [
-      ["IDs únicos", inReg.length, `${A.rowsTotal.toLocaleString("pt-BR")} respostas no Forms`],
+      ["IDs únicos", inReg.length, `${responseCount.toLocaleString("pt-BR")} respostas no Forms`],
       ["A validar", cnt(c => c.status === "PENDENTE"), "último envio sem status"],
       ["Recusadas", cnt(c => c.status === "RECUSADA"), "última resposta = recusada"],
       ["Reincidentes", cnt(c => c.recusas >= 2), "recusados 2× ou mais"],
