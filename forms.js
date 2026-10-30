@@ -266,18 +266,19 @@
     if (!forms) { $("#finfo").textContent = "Suba o Forms para começar."; return; }
     const firstLoad = !A;
     const savedView = firstLoad ? store.get("forms_view_state", {}) : {};
+    const hasSavedView = firstLoad && savedView.version === 2;
     reanalyze();
     $("#finfo").textContent = A.cols.id ? "" : "Não achei a coluna “ID” no arquivo. Confira se é o Forms baixado.";
     $("#fapp").hidden = !A.cols.id;
     const dts = [...new Set(A.cases.map(c => c.dia).filter(Boolean))].sort().reverse();
     $("#fDt").innerHTML = '<option value="TUDO">(Todas)</option>' + dts.map(d => `<option value="${d}">${fmtDay(d)}</option>`).join("");
     if (firstLoad) {
-      S.st = savedView.st || "PENDENTE";
-      S.reg = new Set(Array.isArray(savedView.reg) ? savedView.reg : []);
-      S.val = new Set(Array.isArray(savedView.val) ? savedView.val : []);
-      S.dt = savedView.dt || "TUDO";
-      S.sort = savedView.sort || "old";
-      S.q = savedView.q || "";
+      S.st = hasSavedView ? (savedView.st || "TODOS") : "TODOS";
+      S.reg = new Set(hasSavedView && Array.isArray(savedView.reg) ? savedView.reg : []);
+      S.val = new Set(hasSavedView && Array.isArray(savedView.val) ? savedView.val : []);
+      S.dt = hasSavedView && savedView.dt ? savedView.dt : (dts.includes(dayKey(new Date())) ? dayKey(new Date()) : "TUDO");
+      S.sort = hasSavedView ? (savedView.sort || "old") : "old";
+      S.q = hasSavedView ? (savedView.q || "") : "";
     }
     if (S.dt !== "TUDO" && !dts.includes(S.dt)) S.dt = "TUDO";
     $("#fDt").value = S.dt;
@@ -296,7 +297,7 @@
     byId = new Map(A.cases.map(c => [c.id, c]));
   }
   function saveViewState() {
-    store.set("forms_view_state", { st: S.st, reg: [...S.reg], val: [...S.val], dt: S.dt, sort: S.sort, q: S.q });
+    store.set("forms_view_state", { version: 2, st: S.st, reg: [...S.reg], val: [...S.val], dt: S.dt, sort: S.sort, q: S.q });
   }
   function refresh() { if (A) { saveViewState(); render(); } }
 

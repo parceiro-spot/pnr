@@ -9,8 +9,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head><body><main>
 <div class="top"><h1>Análise PNR</h1><button id="theme"></button></div>
-<nav class="nav" id="nav"><button data-v="viewLost" class="on">📦 Análise PNR</button><button data-v="viewForms">📋 Análise Forms</button></nav>
-<section id="viewLost">
+<nav class="nav" id="nav"><button data-v="viewLost">📦 Análise PNR</button><button data-v="viewForms" class="on">📋 Análise Forms</button></nav>
+<section id="viewLost" hidden>
 <p class="sub">Suba as duas planilhas. O site refaz o seu tutorial (filtro de status, PROCX da rota no BSC, bases BRN/Null/ND) e monta os gráficos da Análise PNR.</p>
 
 <div class="drops">
@@ -32,7 +32,7 @@
 <div id="panel"></div>
 </div>
 </section>
-<section id="viewForms" hidden>
+<section id="viewForms">
 <p class="sub">Suba o Forms baixado em <b>.ods</b> (ou .xlsx / .csv). O site junta as respostas por ID, conta quantas vezes cada pacote foi <b>recusado</b> e monta a fila para você trabalhar por regional. Em <b>Abrir Logistic</b> escolha <b>Normal</b> (copia o ID e abre o Logistic) ou <b>Anônimo</b> (copia o link para você colar numa janela anônima).</p>
 <nav class="nav form-nav" id="formsNav"><button data-form-view="formAnalysisTab" class="on">📋 Análise Forms</button><button data-form-view="formMessageTab">💬 Mensagem Logistic</button></nav>
 <div id="formAnalysisTab">
