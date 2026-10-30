@@ -197,6 +197,7 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } }
   };
   let forms = null, A = null, tratando = null; // tratando = ID que você está tratando agora
+  const selectedIds = new Set();
   excludedIds = new Set(store.get("forms_excluded_ids", DEFAULT_EXCLUDED_IDS));
   DEFAULT_EXCLUDED_IDS.forEach(id => excludedIds.add(id));
   let edits = store.get("forms_edits", {}), byId = new Map();
@@ -409,7 +410,7 @@
     const vsel = `<select class="valsel" data-val="${c.id}" data-v="${esc(N(vNow))}" title="Quem validou este pacote">${vNow ? "" : '<option value="" selected>— Validador —</option>'}${VALIDADORES.map(v => `<option value="${v}"${N(v) === N(vNow) ? " selected" : ""}>${v}</option>`).join("")}${vExtra}</select>`;
     const mr = ["RECUSADA", "NÃO SUBIR"].includes(c.status) ? `<input class="mr" data-mr="${c.id}" placeholder="${c.status === "NÃO SUBIR" ? "Motivo da análise (escreva aqui)" : "Motivo da recusa (escreva aqui)"}" value="${esc(L.motRecusa)}">` : "";
     const hist = `<div class="h hh">${c.recusas}× recusada neste ID · ${c.tent} envio${c.tent > 1 ? "s" : ""}</div>` + c.att.map((a, ix) => ({ a, ix })).reverse().map(({ a, ix }) => `<div class="h"><span>${fmtDT(a.ts)}</span><span>${esc(a.validador) || "—"}</span><span class="bd ${BADGE[a.status] || ""}">${esc(badge(a.status))}</span><span>${esc(prettyMotivo(a.motivo)) || "—"}</span>${a.urls.length ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(a.urls[0])}" title="Abrir a foto desse envio">📷</a>` : ""}${a.motRecusa ? `<em>Motivo da recusa: ${esc(a.motRecusa)}</em>` : ""}</div>`).join("");
-    return `<div class="fr${c.recusas >= 2 ? " hot" : ""}${L.edited ? " ed" : ""}${c.id === tratando ? " trat" : ""}" data-id="${c.id}">
+    return `<div class="fr${c.recusas >= 2 ? " hot" : ""}${L.edited ? " ed" : ""}${c.id === tratando ? " trat" : ""}${selectedIds.has(c.id) ? " selected" : ""}" data-id="${c.id}">
   <div class="c1"><b class="idv">${c.id}</b><button class="mini" data-cp="${c.id}" title="Copiar ID">⧉</button><button class="mini remove-id" data-remove="${c.id}" title="Remover este ID da análise e das cópias">✕</button><div class="mu">${c.code ? esc(c.code) + " · " : ""}${esc(c.regiao)}${c.lote ? " · enviado em lote" : ""}</div>${L.focal ? `<div class="mu focal">Focal: ${esc(L.focal)}</div>` : ""}<button class="mini cpall" data-cpall="${c.id}" title="Copiar mensagem completa">⧉ Copiar mensagem ID, base e focal</button></div>
   <div class="c2">${sel} ${rec}${L.edited ? ' <span class="edtag">✎ editado</span>' : ""}<div class="vrow">${vsel}</div><div class="mu">${c.tent} envio${c.tent > 1 ? "s" : ""} · último ${fmtDT(L.ts)}</div></div>
   <div class="c3"><div class="mot" title="${esc(L.motivo)}">${esc(prettyMotivo(L.motivo)) || "—"}</div><div class="mu">Motorista: ${esc(L.motorista) || "—"}</div>${c.id === tratando ? tratTag(c.id) : ""}${mr}</div>
@@ -443,6 +444,7 @@
   function removeId(id) {
     if (!id) return;
     excludedIds.add(String(id));
+    selectedIds.delete(String(id));
     delete edits[id];
     store.set("forms_excluded_ids", [...excludedIds]);
     tratando = tratando === id ? null : tratando;
@@ -450,8 +452,23 @@
     render();
     toast(`ID ${id} removido da análise e das cópias.`);
   }
+  function toggleSelected(id) {
+    id = String(id);
+    if (selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id);
+    const row = document.querySelector(`#fList .fr[data-id="${id}"]`);
+    if (row) row.classList.toggle("selected", selectedIds.has(id));
+    updateSelectionHint();
+  }
+  function updateSelectionHint() {
+    const el = $("#fSelectionHint");
+    if (el) el.textContent = selectedIds.size ? `${selectedIds.size} linha${selectedIds.size === 1 ? "" : "s"} selecionada${selectedIds.size === 1 ? "" : "s"} · Ctrl+C para copiar` : "Use Ctrl+clique para selecionar linhas e Ctrl+C para copiar no Forms.";
+  }
   // copiar o ID ou clicar em qualquer coisa da linha marca o pacote como TRATANDO; ao mexer em outro, sai do anterior; clicar na etiqueta tira
   $("#fList").addEventListener("click", e => {
+    const selectedRow = e.target.closest(".fr");
+    if (selectedRow && (e.ctrlKey || e.metaKey) && !e.target.closest("button,a,select,input,textarea")) {
+      e.preventDefault(); e.stopPropagation(); toggleSelected(selectedRow.dataset.id); return;
+    }
     if (e.target.closest("[data-untrat]")) { markTrat(null); return; }
     const row = e.target.closest(".fr"); if (row) markTrat(row.dataset.id);
   });
@@ -649,6 +666,28 @@
     const i = header.findIndex(isTimestampKey);
     return i >= 0 ? [header[i], ...header.filter((_, ix) => ix !== i)] : header;
   };
+  function selectedFormsTsv() {
+    if (!A || !forms || !selectedIds.size) return "";
+    const { out } = Core.applyEdits(forms, A);
+    const C = A.cols;
+    const allHeaders = [...new Set(forms.slice(0, 50).flatMap(r => Object.keys(r)))];
+    const tsCol = C.ts || allHeaders.find(isTimestampKey) || "Carimbo de data/hora";
+    const header = pasteHeader([tsCol, ...allHeaders.filter(k => k !== tsCol)]);
+    const rows = out.filter((r, i) => {
+      const ids = C.id ? extractIds(r[C.id]) : [];
+      return ids.some(id => selectedIds.has(id)) && !ids.some(id => excludedIds.has(id));
+    });
+    return rows.map(r => header.map(h => cellTxt(exportValue(r, h)).replace(/[\t\r\n]+/g, " ")).join("\t")).join("\n");
+  }
+  async function copySelectedForms(btn) {
+    if (!selectedIds.size) { toast("Use Ctrl+clique para selecionar pelo menos uma linha."); return; }
+    const tsv = selectedFormsTsv();
+    if (!tsv) { toast("Não encontrei linhas válidas para copiar."); return; }
+    await copy(tsv);
+    if (btn) flash(btn, "✓ copiado");
+    updateSelectionHint();
+  }
+  $("#fCopySelected").onclick = e => copySelectedForms(e.currentTarget);
   $("#dlXlsx").onclick = async e => {
     const { rows, header, fname } = dayData(); if (!rows.length) return;
     const outHeader = pasteHeader(header);
@@ -668,7 +707,12 @@
     const tsv = rows.map(r => outHeader.map(h => cellTxt(exportValue(r, h)).replace(/[\t\r\n]+/g, " ")).join("\t")).join("\n");
     await copy(tsv); flash(e.target, `✓ ${rows.length} linhas copiadas`);
   };
-  document.addEventListener("keydown", e => { if (e.key === "Escape") $("#dl").hidden = true; });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") $("#dl").hidden = true;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && !e.target.closest("input,textarea,select")) {
+      if (selectedIds.size) { e.preventDefault(); copySelectedForms(); }
+    }
+  });
 
   // ---------- Mensagem para Logistic ----------
   const DEFAULT_MSGS = [
