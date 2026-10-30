@@ -380,6 +380,7 @@
   function renderList(list) {
     const show = list.slice(0, S.limit);
     $("#fList").innerHTML = show.length ? show.map(rowHtml).join("") : '<div class="msg">Nada nesse filtro. 🎉</div>';
+    $("#fList").classList.toggle("has-tratando", !!tratando);
     $("#fMore").hidden = list.length <= S.limit;
     $("#fMore").textContent = `Mostrar mais (${Math.min(100, list.length - S.limit)} de ${list.length - S.limit} restantes)`;
     const bad = A.invalid;
@@ -436,9 +437,14 @@
     if (tratando === id) return;
     tratando = id;
     document.querySelectorAll("#fList .fr.trat").forEach(r => { r.classList.remove("trat"); const t = r.querySelector(".trat-tag"); if (t) t.remove(); });
+    $("#fList").classList.toggle("has-tratando", !!id);
     if (!id) { renderMessageBox(); return; }
     const row = document.querySelector(`#fList .fr[data-id="${id}"]`);
-    if (row) { row.classList.add("trat"); row.querySelector(".c3").insertAdjacentHTML("beforeend", tratTag(id)); }
+    if (row) {
+      row.classList.add("trat");
+      row.querySelector(".c3").insertAdjacentHTML("beforeend", tratTag(id));
+      requestAnimationFrame(() => row.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" }));
+    }
     renderMessageBox();
   }
   function removeId(id) {
@@ -457,6 +463,11 @@
     if (selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id);
     const row = document.querySelector(`#fList .fr[data-id="${id}"]`);
     if (row) row.classList.toggle("selected", selectedIds.has(id));
+    updateSelectionHint();
+  }
+  function clearSelected() {
+    selectedIds.clear();
+    document.querySelectorAll("#fList .fr.selected").forEach(row => row.classList.remove("selected"));
     updateSelectionHint();
   }
   function updateSelectionHint() {
@@ -708,7 +719,7 @@
     await copy(tsv); flash(e.target, `✓ ${rows.length} linhas copiadas`);
   };
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") $("#dl").hidden = true;
+    if (e.key === "Escape") { $("#dl").hidden = true; markTrat(null); clearSelected(); }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && !e.target.closest("input,textarea,select")) {
       if (selectedIds.size) { e.preventDefault(); copySelectedForms(); }
     }
