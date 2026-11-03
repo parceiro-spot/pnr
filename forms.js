@@ -233,6 +233,30 @@
     return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "", raw: true });
   }
   const rowKey = r => JSON.stringify(Object.keys(r || {}).sort().map(k => [k, r[k]]));
+  // As linhas do Forms ficam no IndexedDB (o localStorage estoura em ~5 MB com milhares de respostas
+  // e, quando estourava, o Forms não era salvo e era preciso anexar de novo a cada vez).
+  const idb = (() => {
+    let dbp = null;
+    const open = () => dbp || (dbp = new Promise((res, rej) => {
+      try {
+        const r = indexedDB.open("analise_forms", 1);
+        r.onupgradeneeded = () => r.result.createObjectStore("kv");
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => rej(r.error);
+      } catch (e) { rej(e); }
+    }));
+    const run = (mode, fn) => open().then(db => new Promise((res, rej) => {
+      const tx = db.transaction("kv", mode), rq = fn(tx.objectStore("kv"));
+      tx.oncomplete = () => res(rq && rq.result);
+      tx.onerror = tx.onabort = () => rej(tx.error);
+    }));
+    return { get: k => run("readonly", s => s.get(k)), set: (k, v) => run("readwrite", s => s.put(v, k)) };
+  })();
+  function saveRows() {
+    idb.set("forms_rows", forms)
+      .then(() => { try { localStorage.removeItem("forms_rows"); } catch (e) { } })
+      .catch(() => store.set("forms_rows", forms));
+  }
   function mergeForms(next) {
     const all = Array.isArray(forms) ? forms.slice() : [];
     const seen = new Set(all.map(rowKey));
@@ -241,7 +265,7 @@
       if (!seen.has(key)) { all.push(row); seen.add(key); }
     }
     forms = all;
-    store.set("forms_rows", forms);
+    saveRows();
     return forms.length;
   }
   function wire(box, input, st, cb) {
@@ -255,7 +279,9 @@
     $(box).ondragover = e => e.preventDefault();
     $(box).ondrop = e => { e.preventDefault(); go(e.dataTransfer.files[0]); };
   }
+  let ready = Promise.resolve(); // termina quando o Forms salvo foi carregado
   wire("#fd1", "#ff1", "#fs1", async f => {
+    await ready;
     const incoming = await readForms(f);
     const before = Array.isArray(forms) ? forms.length : 0;
     const total = mergeForms(incoming);
@@ -269,6 +295,9 @@
     reanalyze();
     $("#finfo").textContent = A.cols.id ? "" : "Não achei a coluna “ID” no arquivo. Confira se é o Forms baixado.";
     $("#fapp").hidden = !A.cols.id;
+    // Com o Forms já carregado, a caixa de anexar fica pequena: só use quando houver informações novas.
+    $("#fd1").classList.add("compact");
+    $("#fb1").textContent = "📎 Anexar outro Forms (só se houver informações novas)";
     const dts = [...new Set(A.cases.map(c => c.dia).filter(Boolean))].sort().reverse();
     $("#fDt").innerHTML = '<option value="TUDO">(Todas)</option>' + dts.map(d => `<option value="${d}">${fmtDay(d)}</option>`).join("");
     if (firstLoad) {
@@ -285,12 +314,20 @@
     $("#fDt").value = S.dt;
     refresh();
   }
-  const savedForms = store.get("forms_rows", null);
-  if (Array.isArray(savedForms) && savedForms.length) {
-    forms = savedForms;
-    $("#fs1").textContent = `Forms salvo · ${forms.length.toLocaleString("pt-BR")} linhas`;
-    analyzeNow();
-  }
+  ready = (async () => {
+    let saved = null;
+    try { saved = await idb.get("forms_rows"); } catch (e) { }
+    if (!Array.isArray(saved) || !saved.length) {
+      // migra o que estava salvo na versão antiga (localStorage)
+      saved = store.get("forms_rows", null);
+      if (Array.isArray(saved) && saved.length) idb.set("forms_rows", saved).then(() => { try { localStorage.removeItem("forms_rows"); } catch (e) { } }).catch(() => { });
+    }
+    if (Array.isArray(saved) && saved.length) {
+      forms = saved;
+      $("#fs1").textContent = `Forms salvo · ${forms.length.toLocaleString("pt-BR")} linhas`;
+      analyzeNow();
+    }
+  })();
   function reanalyze() {
     A = analyze(forms, edits);
     store.set("forms_edits", edits);
@@ -387,21 +424,14 @@
     $("#fBadBox").hidden = !bad.length;
     $("#fBadSum").textContent = `⚠️ ${bad.length} respostas sem ID válido de 11 dígitos (ID truncado, nome no lugar do ID…)`;
     $("#fBad").innerHTML = bad.length ? `<table><tr><th>Data</th><th>Validador</th><th>ID digitado</th><th>Base</th><th>Motorista</th><th>Focal</th></tr>${bad.slice(0, 300).map(b => `<tr><td>${fmtDT(b.ts)}</td><td>${esc(b.validador)}</td><td>${esc(b.idRaw)}</td><td>${esc(b.baseRaw)}</td><td>${esc(b.motorista)}</td><td>${esc(b.focal)}</td></tr>`).join("")}</table>` : "";
-    renderMessageBox();
-  }
-
-  function renderMessageBox() {
-    const box = $("#fMsgBox");
-    if (!box) return;
-    box.hidden = false;
-    box.innerHTML = `<h3>MENSAGEM LOGISTIC PARA${tratando ? ` <span class="msg-target">${esc(tratando)}</span>` : ""}</h3><p class="mu">Escolha uma mensagem e clique em copiar.</p><div class="trat-msg"><select class="trat-msg-select" aria-label="Escolher mensagem para o Logistic"><option value="">Escolher mensagem…</option>${MSGS.map(([t], i) => `<option value="${i}">${esc(t)}</option>`).join("")}</select><button type="button" class="mini" data-msg-copy="global">⧉ Copiar</button></div>`;
   }
 
   function rowHtml(c) {
     const L = c.last, u = L.urls;
     const rec = c.recusas === 0 ? "" : `<span class="rec ${c.recusas >= 3 ? "r3" : c.recusas === 2 ? "r2" : "r1"}">${c.recusas >= 3 ? "⚠ " : ""}${c.recusas}× recusada</span>`;
     const caso = `<div class="lgbox"><small>Abrir Logistic</small><div class="lgpair"><a class="btn pri" target="_blank" rel="noopener" href="${LOGISTIC_URL}" data-lg="${c.id}" title="Copia o ID e abre o Logistic no navegador normal">🌐 Normal ↗</a><button type="button" class="btn lgan" data-lga="${c.id}" title="Copia o link do Logistic para colar numa janela anônima">🕶 Anônimo</button></div></div>`;
-    const msgTrat = `<div class="trat-msg"><select class="trat-msg-select" aria-label="Escolher mensagem para o Logistic"><option value="">Mensagem Logistic…</option>${MSGS.map(([t], i) => `<option value="${i}">${esc(t)}</option>`).join("")}</select><button type="button" class="mini" data-msg-copy="${c.id}">⧉ Copiar</button></div>`;
+    // Mensagens da aba "Mensagem Logistic" direto na linha: um clique copia a mensagem
+    const msgTrat = `<div class="lgbox msgbox"><small>Mensagem Logistic</small><div class="msgchips">${MSGS.map(([t, m], i) => `<button type="button" class="mini msgchip" data-msgc="${i}" title="${esc(m)}">${esc(t)}</button>`).join("")}</div></div>`;
     const evid = u.length ? `<div class="fotos"><a class="btn ph" target="_blank" rel="noopener" href="${esc(u[0])}" title="Abrir a foto no Drive">📷 Ver foto</a>${u.slice(1).map((x, i) => `<a class="btn sm" target="_blank" rel="noopener" href="${esc(x)}" title="Abrir a foto ${i + 2}">📷 ${i + 2}</a>`).join("")}</div>` : (L.evid ? `<span class="mu" title="${esc(L.evid)}">arquivo sem link</span>` : "");
     const SEL = [["RECUSADA", "RECUSADA"], ["ANEXADA", "ANEXADA"], ["ANULADA", "ANULADA"], ["FATURADA", "FATURADA"], ["NÃO SUBIR", "EM ANALISE"]];
     const orig = L.edited ? L.origStatus : L.status;
@@ -438,14 +468,12 @@
     tratando = id;
     document.querySelectorAll("#fList .fr.trat").forEach(r => { r.classList.remove("trat"); const t = r.querySelector(".trat-tag"); if (t) t.remove(); });
     $("#fList").classList.toggle("has-tratando", !!id);
-    if (!id) { renderMessageBox(); return; }
+    if (!id) return;
     const row = document.querySelector(`#fList .fr[data-id="${id}"]`);
     if (row) {
       row.classList.add("trat");
       row.querySelector(".c3").insertAdjacentHTML("beforeend", tratTag(id));
-      requestAnimationFrame(() => row.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" }));
     }
-    renderMessageBox();
   }
   function removeId(id) {
     if (!id) return;
@@ -472,18 +500,11 @@
   }
   function updateSelectionHint() {
     const el = $("#fSelectionHint");
-    if (el) el.textContent = selectedIds.size ? `${selectedIds.size} linha${selectedIds.size === 1 ? "" : "s"} selecionada${selectedIds.size === 1 ? "" : "s"} · Ctrl+C para copiar` : "Use Ctrl+clique para selecionar linhas e Ctrl+C para copiar no Forms.";
+    if (el) el.textContent = selectedIds.size ? `${selectedIds.size} linha${selectedIds.size === 1 ? "" : "s"} selecionada${selectedIds.size === 1 ? "" : "s"} · Ctrl+C para copiar` : "Use Ctrl+clique para selecionar linhas e Ctrl+C para copiar no Forms (cole na célula VALIDADOR).";
   }
-  // copiar o ID ou clicar em qualquer coisa da linha marca o pacote como TRATANDO; ao mexer em outro, sai do anterior; clicar na etiqueta tira
-  $("#fList").addEventListener("click", e => {
-    const selectedRow = e.target.closest(".fr");
-    if (selectedRow && (e.ctrlKey || e.metaKey) && !e.target.closest("button,a,select,input,textarea")) {
-      e.preventDefault(); e.stopPropagation(); toggleSelected(selectedRow.dataset.id); return;
-    }
-    if (e.target.closest("[data-untrat]")) { markTrat(null); return; }
-    const row = e.target.closest(".fr"); if (row) markTrat(row.dataset.id);
-  });
-  $("#fList").addEventListener("focusin", e => { const row = e.target.closest(".fr"); if (row) markTrat(row.dataset.id); });
+  // Clicar em qualquer coisa da linha: primeiro faz a ação clicada (copiar ID, mensagem, abrir Logistic…)
+  // e SÓ DEPOIS abre o pacote centralizado (TRATANDO), já com a ação feita. Não usamos mais o foco/mousedown
+  // para abrir, porque a linha saltava para o centro antes do clique terminar e o clique se perdia.
   $("#fCopyIds").addEventListener("click", () => markTrat(null));
 
   // ---------- eventos ----------
@@ -506,10 +527,24 @@
   const flash = (el, t) => { const o = el.textContent; el.textContent = t; setTimeout(() => el.textContent = o, 900); };
   // Clicar em "Abrir Logistic" copia o ID do pacote e abre a página do Logistic (é só colar o ID na busca)
   $("#fList").addEventListener("click", e => {
+    const row = e.target.closest(".fr");
+    if (row && (e.ctrlKey || e.metaKey) && !e.target.closest("button,a,select,input,textarea")) {
+      e.preventDefault(); e.stopPropagation(); toggleSelected(row.dataset.id); return;
+    }
+    if (e.target.closest("[data-untrat]")) { markTrat(null); return; }
     const remove = e.target.closest("[data-remove]");
     if (remove) { e.preventDefault(); e.stopPropagation(); removeId(remove.dataset.remove); return; }
-    const t = e.target.closest("[data-cp],[data-cpall],[data-h],[data-lg],[data-lga],[data-msg-copy]");
-    if (!t) return;
+    const t = e.target.closest("[data-cp],[data-cpall],[data-h],[data-lg],[data-lga],[data-msgc]");
+    if (t) doAction(t);
+    // selects abrem a lista nativa: o pacote é aberto quando você escolhe (evento change), não no clique
+    if (row && !e.target.closest("select")) markTrat(row.dataset.id);
+  });
+  function doAction(t) {
+    if (t.dataset.msgc !== undefined) {
+      const m = MSGS[Number(t.dataset.msgc)];
+      if (m) { copy(m[1]); flash(t, "✓ copiado"); }
+      return;
+    }
     if (t.dataset.cp) { copy(t.dataset.cp); flash(t, "✓"); }
     if (t.dataset.cpall) {
       const c = byId.get(t.dataset.cpall), L = c ? c.last : null;
@@ -525,14 +560,8 @@
       copy(LOGISTIC_URL); markCopied(t);
       toast("🕶 Link do Logistic copiado. Abra uma janela anônima (Ctrl+Shift+N), cole o link (Ctrl+V) e depois copie o ID no ⧉ ao lado do pacote " + t.dataset.lga + ".");
     }
-    if (t.dataset.msgCopy) {
-      const select = t.closest(".trat-msg")?.querySelector(".trat-msg-select") || $("#fMsgBox .trat-msg-select");
-      const index = select && select.value !== "" ? Number(select.value) : -1;
-      if (index >= 0 && MSGS[index]) { copy(MSGS[index][1]); flash(t, "✓ copiado"); }
-      else toast("Escolha uma mensagem do Logistic antes de copiar.");
-    }
     if (t.dataset.h) { const h = t.closest(".fr").querySelector(".hist"); h.hidden = !h.hidden; }
-  });
+  }
   const tOf = c => (c.last.ts ? c.last.ts.getTime() : 0);
   const curEdit = c => (edits[c.id] && edits[c.id].t === tOf(c) ? edits[c.id] : { t: tOf(c) });
   function keepEdit(c, ed) {
@@ -566,6 +595,7 @@
     tmp.innerHTML = rowHtml(byId.get(c.id));
     const nr = tmp.firstElementChild; row.replaceWith(nr);
     if (open) nr.querySelector(".hist").hidden = false;
+    markTrat(c.id); // mudou status/validador: a ação já foi feita, agora abre centralizado
     const mi = nr.querySelector(".mr"); if (mi && !mi.value) mi.focus();
     renderTop(currentList());
   });
@@ -640,7 +670,7 @@
     const label = `${fmtDay(d1)} ${pad2(h1)}:00 → ${fmtDay(d2)} ${pad2(h2)}:59`;
     const fullDays = h1 === 0 && h2 === 23;
     const fname = d1 === d2 && fullDays ? `Forms_${dmy(d1)}.xlsx` : `Forms_${dmy(d1)}_${pad2(h1)}h_a_${dmy(d2)}_${pad2(h2)}h.xlsx`;
-    return { rows, header, tsCol, label, fname, nEd, bad: from > to };
+    return { rows, header, copyHdr: copyHeader(allHeaders, C, tsCol), tsCol, label, fname, nEd, bad: from > to };
   }
   function dlRefresh() {
     if (!forms || !A) { $("#dlInfo").textContent = "Suba o Forms primeiro."; return; }
@@ -677,13 +707,19 @@
     const i = header.findIndex(isTimestampKey);
     return i >= 0 ? [header[i], ...header.filter((_, ix) => ix !== i)] : header;
   };
+  // Ao colar no Forms, o carimbo de data/hora não vai junto: a cópia começa na coluna VALIDADOR
+  // (na ordem original das colunas do Forms) e segue até o fim.
+  const copyHeader = (allHeaders, C, tsCol) => {
+    const i = C.validador ? allHeaders.indexOf(C.validador) : -1;
+    return i >= 0 ? allHeaders.slice(i) : allHeaders.filter(k => k !== tsCol);
+  };
   function selectedFormsTsv() {
     if (!A || !forms || !selectedIds.size) return "";
     const { out } = Core.applyEdits(forms, A);
     const C = A.cols;
     const allHeaders = [...new Set(forms.slice(0, 50).flatMap(r => Object.keys(r)))];
     const tsCol = C.ts || allHeaders.find(isTimestampKey) || "Carimbo de data/hora";
-    const header = pasteHeader([tsCol, ...allHeaders.filter(k => k !== tsCol)]);
+    const header = copyHeader(allHeaders, C, tsCol);
     const rows = out.filter((r, i) => {
       const ids = C.id ? extractIds(r[C.id]) : [];
       return ids.some(id => selectedIds.has(id)) && !ids.some(id => excludedIds.has(id));
@@ -696,6 +732,7 @@
     if (!tsv) { toast("Não encontrei linhas válidas para copiar."); return; }
     await copy(tsv);
     if (btn) flash(btn, "✓ copiado");
+    toast("Copiado a partir do VALIDADOR (sem o carimbo). Cole na célula VALIDADOR da primeira linha vazia do Forms.");
     updateSelectionHint();
   }
   $("#fCopySelected").onclick = e => copySelectedForms(e.currentTarget);
@@ -711,10 +748,10 @@
     await saveBlob(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), fname);
     flash(e.target, `✓ ${rows.length} linhas baixadas`);
   };
-  // copia só as linhas (sem cabeçalho), separadas por tab: é só colar na primeira linha vazia da planilha do Forms
+  // copia só as linhas (sem cabeçalho e sem carimbo), separadas por tab: cole na célula VALIDADOR da primeira linha vazia
   $("#dlCopy").onclick = async e => {
-    const { rows, header } = dayData(); if (!rows.length) return;
-    const outHeader = pasteHeader(header);
+    const { rows, copyHdr } = dayData(); if (!rows.length) return;
+    const outHeader = copyHdr;
     const tsv = rows.map(r => outHeader.map(h => cellTxt(exportValue(r, h)).replace(/[\t\r\n]+/g, " ")).join("\t")).join("\n");
     await copy(tsv); flash(e.target, `✓ ${rows.length} linhas copiadas`);
   };

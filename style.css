@@ -150,14 +150,13 @@ a.btn.sm{padding:2px 8px;font-size:12px}
 .lgbox{display:flex;flex-direction:column;gap:4px}
 .lgbox small{font-size:11px;font-weight:700;opacity:.7;text-transform:uppercase;letter-spacing:.4px}
 .lgpair{display:flex;gap:6px;flex-wrap:wrap}
-.trat-msg{display:none;align-items:center;gap:6px;flex-wrap:wrap}
-.fr.trat .trat-msg{display:flex}
-.forms-msg{margin:12px 0 0;border-left:5px solid #e6a100;background:linear-gradient(90deg,rgba(230,161,0,.10),var(--sf) 42%)}
-.forms-msg h3{margin:0;text-transform:uppercase;font-size:14px;letter-spacing:.04em}
-.forms-msg p{margin:2px 0 8px}
-.forms-msg .trat-msg{display:flex}
-.msg-target{font-family:ui-monospace,Consolas,monospace;color:#9a5b00}
-.trat-msg-select{max-width:180px;padding:5px 8px;font-size:12px}
+/* mensagens do Logistic direto na linha (um clique copia) */
+.msgchips{display:flex;gap:5px;flex-wrap:wrap}
+button.msgchip{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:4px 9px;font-weight:600}
+button.msgchip:hover{background:var(--ac);border-color:var(--ac);color:#fff}
+/* caixa de anexar compacta quando o Forms já está salvo */
+.drop.compact{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 14px;text-align:left;border-width:1px}
+.drop.compact b{display:inline;font-weight:600}
 button.btn.lgan{display:inline-block;font:inherit;font-size:13px;font-weight:600;color:var(--tx);border:1px solid var(--ln);background:var(--sf);padding:6px 12px;border-radius:8px;cursor:pointer}
 button.btn.lgan:hover{background:#1f2937;color:#fff;border-color:#1f2937}
 #lgToast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);max-width:min(520px,92vw);background:#1f2937;color:#fff;padding:12px 16px;border-radius:10px;font-size:14px;line-height:1.4;box-shadow:0 8px 24px rgba(0,0,0,.3);opacity:0;pointer-events:none;transition:.25s;z-index:99}
