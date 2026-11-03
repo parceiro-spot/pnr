@@ -198,7 +198,17 @@
     return picked.map(l => l.i);
   }
 
-  const Core = { currentRowIndexes, VALIDADORES, prettyMotivo, driveId, URLS, analyze, applyEdits, extractIds, extractCodes, regionOf, parseTs, normStatus, REGIONAIS, SEM_REG, LOGISTIC_URL, dayKey, fmtDay, fmtDT, esc };
+  // Ordem EXATA das colunas da planilha do Forms (a que você vê na tela do Forms):
+  // Carimbo | VALIDADOR | STATUS DA EVIDÊNCIA | ID | BASE | MOTIVO | Evidência | Focal | Motorista | (demais colunas)
+  // Não importa em que ordem o arquivo baixado trouxe as colunas: a cópia e o .xlsx saem sempre nesta sequência.
+  function formsOrder(allHeaders, C, tsCol, withTs) {
+    const seq = [C.validador, C.status, C.id, C.base, C.motivo, C.evid, C.focal, C.motorista].filter(k => k && allHeaders.includes(k));
+    const used = new Set([...seq, tsCol]);
+    const rest = allHeaders.filter(k => !used.has(k)); // e-mail, motivo da recusa etc., na ordem do arquivo
+    return withTs ? [tsCol, ...seq, ...rest] : [...seq, ...rest];
+  }
+
+  const Core = { formsOrder, currentRowIndexes, VALIDADORES, prettyMotivo, driveId, URLS, analyze, applyEdits, extractIds, extractCodes, regionOf, parseTs, normStatus, REGIONAIS, SEM_REG, LOGISTIC_URL, dayKey, fmtDay, fmtDT, esc };
   if (typeof module !== "undefined" && module.exports) module.exports = Core;
   root.FormsCore = Core;
   if (typeof document === "undefined") return;
@@ -666,7 +676,7 @@
     const edIdx = new Set(A.cases.filter(c => c.last.edited).map(c => c.last.i));
     const allHeaders = [...new Set(forms.slice(0, 50).flatMap(r => Object.keys(r)))];
     const tsCol = C.ts || allHeaders.find(isTimestampKey) || "Carimbo de data/hora";
-    const header = [tsCol, ...allHeaders.filter(k => k !== tsCol)];
+    const header = Core.formsOrder(allHeaders, C, tsCol, true);
     let nEd = 0;
     const rows = out.filter((r, i) => {
       const ids = C.id ? extractIds(r[C.id]) : [];
@@ -722,10 +732,7 @@
   };
   // Ao colar no Forms, o carimbo de data/hora não vai junto: a cópia começa na coluna VALIDADOR
   // (na ordem original das colunas do Forms) e segue até o fim.
-  const copyHeader = (allHeaders, C, tsCol) => {
-    const i = C.validador ? allHeaders.indexOf(C.validador) : -1;
-    return i >= 0 ? allHeaders.slice(i) : allHeaders.filter(k => k !== tsCol);
-  };
+  const copyHeader = (allHeaders, C, tsCol) => Core.formsOrder(allHeaders, C, tsCol, false);
   function selectedFormsTsv() {
     if (!A || !forms || !selectedIds.size) return "";
     const { out } = Core.applyEdits(forms, A);
@@ -740,13 +747,17 @@
     });
     return rows.map(r => header.map(h => cellTxt(exportValue(r, h)).replace(/[\t\r\n]+/g, " ")).join("\t")).join("\n");
   }
+  function selectedHeaderNames() {
+    const allHeaders = [...new Set(forms.slice(0, 50).flatMap(r => Object.keys(r)))];
+    return copyHeader(allHeaders, A.cols, A.cols.ts || allHeaders.find(isTimestampKey) || "Carimbo de data/hora");
+  }
   async function copySelectedForms(btn) {
     if (!selectedIds.size) { toast("Use Ctrl+clique para selecionar pelo menos uma linha."); return; }
     const tsv = selectedFormsTsv();
     if (!tsv) { toast("Não encontrei linhas válidas para copiar."); return; }
     await copy(tsv);
     if (btn) flash(btn, "✓ copiado");
-    toast("Copiado a partir do VALIDADOR (sem o carimbo). Cole na célula VALIDADOR da primeira linha vazia do Forms.");
+    toast("Copiado: " + selectedHeaderNames().slice(0, 8).join(" → ") + ". Cole na célula VALIDADOR da primeira linha vazia do Forms.");
     updateSelectionHint();
   }
   $("#fCopySelected").onclick = e => copySelectedForms(e.currentTarget);
