@@ -23,3 +23,5 @@ O **validador do Forms tem prioridade**: ao baixar/subir o Forms de novo, se a r
 - **Copiar selecionadas para o Forms** (e Ctrl+C) e **BAIXAR FORMS → Copiar** agora copiam a partir da coluna **VALIDADOR** (sem o carimbo). Cole na célula VALIDADOR da primeira linha vazia. O .xlsx continua com o carimbo completo.
 - As mensagens da aba **Mensagem Logistic** aparecem como botões em cada linha da lista; um clique copia a mensagem (no lugar do seletor antigo).
 - Qualquer clique na linha (copiar ID, mensagem, Abrir Logistic, histórico…) primeiro executa a ação e só depois abre o pacote centralizado (TRATANDO). Em status/validador, abre ao escolher a opção.
+
+**Correção (cópia para o Forms)**: ao selecionar pacotes (Ctrl+clique) e copiar (Ctrl+C ou "Copiar selecionadas para o Forms"), sai **uma linha por pacote, sempre o envio ATUAL** (a evidência mais recente), nunca o histórico. 1 pacote selecionado = 1 linha; vários = várias linhas, uma embaixo da outra, em ordem cronológica, a partir da coluna VALIDADOR, prontas para colar no Forms.

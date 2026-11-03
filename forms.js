@@ -185,7 +185,20 @@
     return { out, changes };
   }
 
-  const Core = { VALIDADORES, prettyMotivo, driveId, URLS, analyze, applyEdits, extractIds, extractCodes, regionOf, parseTs, normStatus, REGIONAIS, SEM_REG, LOGISTIC_URL, dayKey, fmtDay, fmtDT, esc };
+  // Linhas que vão para a cópia: UMA por pacote selecionado, sempre o envio ATUAL (o último),
+  // nunca o histórico. Se o mesmo envio cobre vários IDs (lote), a linha sai uma vez só.
+  // Ordem cronológica (como o Forms registra), então várias linhas colam em sequência.
+  function currentRowIndexes(A, ids) {
+    const want = ids instanceof Set ? ids : new Set(ids), seen = new Set(), picked = [];
+    for (const c of A.cases) {
+      if (!want.has(c.id) || seen.has(c.last.i)) continue;
+      seen.add(c.last.i); picked.push(c.last);
+    }
+    picked.sort((a, b) => ((a.ts ? a.ts.getTime() : 0) - (b.ts ? b.ts.getTime() : 0)) || a.i - b.i);
+    return picked.map(l => l.i);
+  }
+
+  const Core = { currentRowIndexes, VALIDADORES, prettyMotivo, driveId, URLS, analyze, applyEdits, extractIds, extractCodes, regionOf, parseTs, normStatus, REGIONAIS, SEM_REG, LOGISTIC_URL, dayKey, fmtDay, fmtDT, esc };
   if (typeof module !== "undefined" && module.exports) module.exports = Core;
   root.FormsCore = Core;
   if (typeof document === "undefined") return;
@@ -720,9 +733,10 @@
     const allHeaders = [...new Set(forms.slice(0, 50).flatMap(r => Object.keys(r)))];
     const tsCol = C.ts || allHeaders.find(isTimestampKey) || "Carimbo de data/hora";
     const header = copyHeader(allHeaders, C, tsCol);
-    const rows = out.filter((r, i) => {
+    // Só o envio ATUAL de cada pacote selecionado (1 selecionado = 1 linha; N selecionados = N linhas).
+    const rows = Core.currentRowIndexes(A, selectedIds).map(i => out[i]).filter(r => {
       const ids = C.id ? extractIds(r[C.id]) : [];
-      return ids.some(id => selectedIds.has(id)) && !ids.some(id => excludedIds.has(id));
+      return !ids.some(id => excludedIds.has(id));
     });
     return rows.map(r => header.map(h => cellTxt(exportValue(r, h)).replace(/[\t\r\n]+/g, " ")).join("\t")).join("\n");
   }
