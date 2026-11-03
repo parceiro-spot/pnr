@@ -372,9 +372,9 @@
     if (Array.isArray(saved) && saved.length) {
       forms = saved;
       $("#fs1").textContent = `Forms salvo · ${forms.length.toLocaleString("pt-BR")} linhas`;
-      analyzeNow();
+      try { analyzeNow(); } catch (e) { console.error("Falha ao abrir o Forms salvo:", e); $("#finfo").textContent = "Não consegui abrir o Forms salvo (" + (e && e.message || e) + "). Anexe o arquivo de novo."; }
     }
-  })();
+  })().catch(e => console.error(e));
   function reanalyze() {
     A = analyze(forms, edits);
     store.set("forms_edits", edits);
@@ -698,6 +698,8 @@
     const from = atHour(d1, h1, false), to = atHour(d2, h2, true);
     const { out } = Core.applyEdits(forms, A);
     const edIdx = new Set(A.cases.filter(c => c.last.edited).map(c => c.last.i));
+    // quando você mexeu (status/validador/motivo) em cada resposta; edições antigas, sem data, não entram
+    const edAt = new Map(A.cases.filter(c => c.last.edited).map(c => [c.last.i, c.last.editAt || 0]));
     const allHeaders = allHdrs();
     const tsCol = C.ts || allHeaders.find(isTimestampKey) || "Carimbo de data/hora";
     const header = Core.formsOrder(allHeaders, C, tsCol, true);
@@ -707,9 +709,11 @@
       if (ids.some(id => excludedIds.has(id))) return false;
       const d = parseTs(r[tsCol]);
       const inR = !!d && d >= from && d <= to, ed = edIdx.has(i);
-      // O período é definido pelo carimbo original do Forms. Editar uma resposta antiga
-      // não pode fazer essa resposta aparecer no arquivo de uma data diferente.
-      const keep = inR && (!only || ed);
+      // Entra no arquivo: (a) resposta com carimbo dentro do período, ou (b) resposta de outro dia que
+      // VOCÊ alterou aqui dentro do período (ex.: Forms de ontem à noite validado hoje). A linha segue
+      // com o carimbo original do Forms. Alterações feitas antes do período não voltam.
+      const at = edAt.get(i) || 0, inEdit = ed && at >= from.getTime() && at <= to.getTime();
+      const keep = (inR || inEdit) && (!only || ed);
       if (keep && ed) nEd++;
       return keep;
     });
@@ -722,7 +726,7 @@
     return { rows, header, copyHdr: copyHeader(allHeaders, C, tsCol), tsCol, label, fname, nEd, bad: from > to };
   }
   function dlRefresh() {
-    if (!forms || !A) { $("#dlInfo").textContent = "Suba o Forms primeiro."; return; }
+    if (!forms || !A) { $("#dlInfo").textContent = "Nenhum Forms carregado neste navegador. Feche esta janela e anexe o Forms (.ods/.xlsx/.csv) na aba Análise Forms primeiro."; $("#dlXlsx").disabled = $("#dlCopy").disabled = true; return; }
     if ($("#dlDate2").value < $("#dlDate").value) $("#dlDate2").value = $("#dlDate").value;
     const { rows, label, nEd, bad } = dayData();
     if (bad) { $("#dlInfo").textContent = "O fim do período está antes do começo."; $("#dlXlsx").disabled = $("#dlCopy").disabled = true; return; }
@@ -732,10 +736,15 @@
   const setHoje = () => { const t = todayKey(); $("#dlDate").value = t; $("#dlDate2").value = t; $("#dlH1").value = 0; $("#dlH2").value = 23; };
   const lockPeriodo = on => ["#dlDate", "#dlDate2", "#dlH1", "#dlH2"].forEach(s => { $(s).disabled = on; });
   $("#fDown").onclick = () => {
-    if (!forms || !A) return;
-    setHoje(); lockPeriodo(true);
-    $("#dlTabs").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.d === "hoje"));
-    $("#dl").hidden = false; dlRefresh();
+    // A janela SEMPRE abre. Se o Forms ainda não foi carregado neste navegador, ela avisa em vez de ficar muda.
+    try {
+      setHoje(); lockPeriodo(true);
+      $("#dlTabs").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.d === "hoje"));
+      $("#dl").hidden = false; dlRefresh();
+    } catch (err) {
+      console.error(err); $("#dl").hidden = false;
+      $("#dlInfo").textContent = "Erro ao preparar o arquivo: " + (err && err.message || err);
+    }
   };
   $("#dlTabs").querySelectorAll("button").forEach(b => b.onclick = () => {
     $("#dlTabs").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
