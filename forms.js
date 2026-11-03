@@ -198,17 +198,30 @@
     return picked.map(l => l.i);
   }
 
-  // Ordem EXATA das colunas da planilha do Forms (a que você vê na tela do Forms):
-  // Carimbo | VALIDADOR | STATUS DA EVIDÊNCIA | ID | BASE | MOTIVO | Evidência | Focal | Motorista | (demais colunas)
-  // Não importa em que ordem o arquivo baixado trouxe as colunas: a cópia e o .xlsx saem sempre nesta sequência.
+  // Ordem EXATA das colunas da planilha do Forms: é a ordem do próprio arquivo baixado do Forms
+  // (nada de ordem "inventada"). Sem carimbo, a cópia começa na coluna VALIDADOR e segue até o fim,
+  // na mesma sequência da planilha, para colar na célula VALIDADOR da primeira linha vazia.
   function formsOrder(allHeaders, C, tsCol, withTs) {
-    const seq = [C.validador, C.status, C.id, C.base, C.motivo, C.evid, C.focal, C.motorista].filter(k => k && allHeaders.includes(k));
-    const used = new Set([...seq, tsCol]);
-    const rest = allHeaders.filter(k => !used.has(k)); // e-mail, motivo da recusa etc., na ordem do arquivo
-    return withTs ? [tsCol, ...seq, ...rest] : [...seq, ...rest];
+    const hs = allHeaders.slice();
+    if (withTs) return hs.includes(tsCol) ? hs : [tsCol, ...hs];
+    const vi = C && C.validador ? hs.indexOf(C.validador) : -1;
+    return (vi >= 0 ? hs.slice(vi) : hs).filter(k => k !== tsCol);
   }
 
-  const Core = { formsOrder, currentRowIndexes, VALIDADORES, prettyMotivo, driveId, URLS, analyze, applyEdits, extractIds, extractCodes, regionOf, parseTs, normStatus, REGIONAIS, SEM_REG, LOGISTIC_URL, dayKey, fmtDay, fmtDT, esc };
+  // Ordem cronológica (como o Forms registra) e sem repetição: se o mesmo envio (mesmo carimbo + mesmo ID)
+  // aparece duas vezes (ex.: Forms anexado de novo com status alterado), fica só a ocorrência mais nova.
+  function chronoDedupe(items, idCol, tsCol) {
+    const t = r => { const d = parseTs(r[tsCol]); return d ? d.getTime() : 0; };
+    const last = new Map();
+    for (const it of items) {
+      const id = idCol ? N(it.r[idCol]) : "";
+      const k = id ? t(it.r) + "|" + id : "u|" + it.i;
+      if (!last.has(k) || it.i > last.get(k).i) last.set(k, it);
+    }
+    return [...last.values()].sort((x, y) => (t(x.r) - t(y.r)) || (x.i - y.i));
+  }
+
+  const Core = { formsOrder, chronoDedupe, currentRowIndexes, VALIDADORES, prettyMotivo, driveId, URLS, analyze, applyEdits, extractIds, extractCodes, regionOf, parseTs, normStatus, REGIONAIS, SEM_REG, LOGISTIC_URL, dayKey, fmtDay, fmtDT, esc };
   if (typeof module !== "undefined" && module.exports) module.exports = Core;
   root.FormsCore = Core;
   if (typeof document === "undefined") return;
@@ -219,7 +232,7 @@
     get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } }
   };
-  let forms = null, A = null, tratando = null; // tratando = ID que você está tratando agora
+  let forms = null, A = null, tratando = null, formsHeader = null, lastHeader = null; // tratando = ID que você está tratando agora
   const selectedIds = new Set();
   excludedIds = new Set(store.get("forms_excluded_ids", DEFAULT_EXCLUDED_IDS));
   DEFAULT_EXCLUDED_IDS.forEach(id => excludedIds.add(id));
@@ -247,13 +260,15 @@
   // ---------- leitura de arquivo ----------
   async function readForms(f) {
     if (/\.csv$/i.test(f.name)) {
-      return new Promise(res => Papa.parse(f, { header: true, skipEmptyLines: true, complete: r => res(r.data) }));
+      return new Promise(res => Papa.parse(f, { header: true, skipEmptyLines: true, complete: r => { lastHeader = (r.meta && r.meta.fields) || Object.keys(r.data[0] || {}); res(r.data); } }));
     }
     const buf = await f.arrayBuffer();
     // Manter carimbos do Excel como número serial: parseTs converte o calendário
     // do arquivo explicitamente, sem deslocamento causado pelo fuso do navegador.
     const wb = XLSX.read(buf, { type: "array", cellDates: false });
-    return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "", raw: true });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "", raw: true });
+    lastHeader = Object.keys(rows[0] || {}); // ordem das colunas do arquivo = ordem da planilha do Forms
+    return rows;
   }
   const rowKey = r => JSON.stringify(Object.keys(r || {}).sort().map(k => [k, r[k]]));
   // As linhas do Forms ficam no IndexedDB (o localStorage estoura em ~5 MB com milhares de respostas
@@ -275,6 +290,13 @@
     }));
     return { get: k => run("readonly", s => s.get(k)), set: (k, v) => run("readwrite", s => s.put(v, k)) };
   })();
+  // Colunas na ordem do Forms (a do último arquivo anexado); colunas novas, se houver, vão no fim.
+  function allHdrs() {
+    const seen = new Set(), out = [];
+    for (const k of formsHeader || []) if (!seen.has(k)) { seen.add(k); out.push(k); }
+    for (const r of (forms || []).slice(0, 50)) for (const k of Object.keys(r)) if (!seen.has(k)) { seen.add(k); out.push(k); }
+    return out;
+  }
   function saveRows() {
     idb.set("forms_rows", forms)
       .then(() => { try { localStorage.removeItem("forms_rows"); } catch (e) { } })
@@ -306,6 +328,7 @@
   wire("#fd1", "#ff1", "#fs1", async f => {
     await ready;
     const incoming = await readForms(f);
+    if (lastHeader && lastHeader.length) { formsHeader = lastHeader.slice(); idb.set("forms_header", formsHeader).catch(() => { }); }
     const before = Array.isArray(forms) ? forms.length : 0;
     const total = mergeForms(incoming);
     const added = total - before;
@@ -340,6 +363,7 @@
   ready = (async () => {
     let saved = null;
     try { saved = await idb.get("forms_rows"); } catch (e) { }
+    try { const h = await idb.get("forms_header"); if (Array.isArray(h) && h.length) formsHeader = h; } catch (e) { }
     if (!Array.isArray(saved) || !saved.length) {
       // migra o que estava salvo na versão antiga (localStorage)
       saved = store.get("forms_rows", null);
@@ -674,11 +698,11 @@
     const from = atHour(d1, h1, false), to = atHour(d2, h2, true);
     const { out } = Core.applyEdits(forms, A);
     const edIdx = new Set(A.cases.filter(c => c.last.edited).map(c => c.last.i));
-    const allHeaders = [...new Set(forms.slice(0, 50).flatMap(r => Object.keys(r)))];
+    const allHeaders = allHdrs();
     const tsCol = C.ts || allHeaders.find(isTimestampKey) || "Carimbo de data/hora";
     const header = Core.formsOrder(allHeaders, C, tsCol, true);
     let nEd = 0;
-    const rows = out.filter((r, i) => {
+    const picked = out.map((r, i) => ({ r, i })).filter(({ r, i }) => {
       const ids = C.id ? extractIds(r[C.id]) : [];
       if (ids.some(id => excludedIds.has(id))) return false;
       const d = parseTs(r[tsCol]);
@@ -689,6 +713,8 @@
       if (keep && ed) nEd++;
       return keep;
     });
+    // sempre na ordem cronológica do Forms, sem linhas repetidas
+    const rows = Core.chronoDedupe(picked, C.id, tsCol).map(x => x.r);
     const fmt = (k, h) => `${fmtDay(k).slice(0, 5)} ${pad2(h)}:00`;
     const label = `${fmtDay(d1)} ${pad2(h1)}:00 → ${fmtDay(d2)} ${pad2(h2)}:59`;
     const fullDays = h1 === 0 && h2 === 23;
@@ -737,7 +763,7 @@
     if (!A || !forms || !selectedIds.size) return "";
     const { out } = Core.applyEdits(forms, A);
     const C = A.cols;
-    const allHeaders = [...new Set(forms.slice(0, 50).flatMap(r => Object.keys(r)))];
+    const allHeaders = allHdrs();
     const tsCol = C.ts || allHeaders.find(isTimestampKey) || "Carimbo de data/hora";
     const header = copyHeader(allHeaders, C, tsCol);
     // Só o envio ATUAL de cada pacote selecionado (1 selecionado = 1 linha; N selecionados = N linhas).
@@ -748,7 +774,7 @@
     return rows.map(r => header.map(h => cellTxt(exportValue(r, h)).replace(/[\t\r\n]+/g, " ")).join("\t")).join("\n");
   }
   function selectedHeaderNames() {
-    const allHeaders = [...new Set(forms.slice(0, 50).flatMap(r => Object.keys(r)))];
+    const allHeaders = allHdrs();
     return copyHeader(allHeaders, A.cols, A.cols.ts || allHeaders.find(isTimestampKey) || "Carimbo de data/hora");
   }
   async function copySelectedForms(btn) {
