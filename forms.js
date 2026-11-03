@@ -781,8 +781,8 @@
     ["Entregue", "O cliente confirma o recebimento do produto"],
     ["PNR Cartão", "O cliente confirma recebimento do cartão."],
     ["Baixado pelo Meli", "A baixa de entrega não foi feita pelo driver"],
-    ["Produto diferente", "A entrega foi realizada corretamente, porém o cliente enviou o produto diferente do que foi comprado"],
-    ["Item faltante", "O cliente enviou o pedido incompleto para o cliente."]
+    ["Produto diferente", "A entrega foi realizada corretamente, porém o vendedor enviou o produto diferente do que foi comprado"],
+    ["Item faltante", "O vendedor enviou o pedido incompleto para o cliente."]
   ];
   const validMsgs = value => Array.isArray(value) ? value.filter(x => Array.isArray(x) && x.length >= 2 && String(x[0]).trim() && String(x[1]).trim()).map(x => [String(x[0]), String(x[1])]) : [];
   const savedMsgs = store.get("forms_msgs", null);
