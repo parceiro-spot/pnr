@@ -18,6 +18,19 @@
   const N = s => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+  // Texto de data com barras pode ser dia/mês (planilha em pt-BR: 03/11/2026) ou mês/dia (7/31/2026).
+  // Olha o arquivo todo: se algum 1º número passa de 12 é dia/mês; se algum 2º passa de 12 é mês/dia.
+  let TS_DMY = null; // null = não deu para saber (mantém o padrão antigo)
+  function detectTsOrder(rows, tk) {
+    if (!tk) return;
+    let dm = 0, md = 0;
+    for (const r of rows || []) {
+      const v = r[tk]; if (typeof v !== "string") continue;
+      const m = v.trim().match(/^(\d{1,2})\/(\d{1,2})\/\d{4}/); if (!m) continue;
+      if (+m[1] > 12) dm++; else if (+m[2] > 12) md++;
+    }
+    TS_DMY = dm > 0 && md === 0 ? true : (md > 0 && dm === 0 ? false : null);
+  }
   function parseTs(v) {
     if (v instanceof Date) return isNaN(v) ? null : v;
     if (typeof v === "number") {
@@ -29,6 +42,7 @@
     let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})[ T,]*(\d{1,2})?:?(\d{2})?:?(\d{2})?/);
     if (m) {
       const a = +m[1], b = +m[2];
+      if (TS_DMY === true) return new Date(+m[3], b - 1, a, +(m[4] || 0), +(m[5] || 0), +(m[6] || 0)); // arquivo em dia/mês (pt-BR)
       // O ODS baixado pelo Forms usa mês/dia (ex.: 7/31/2026).
       // Se um dos campos for maior que 12, use o formato não ambíguo.
       const month = b > 12 ? a : (a > 12 ? b : a);
@@ -122,6 +136,7 @@
   // Junta as respostas do Forms por ID do pacote e conta as recusas.
   function analyze(rows, edits) {
     const C = colMap(rows), g = (r, k) => (k ? r[k] : "");
+    detectTsOrder(rows, C.ts);
     const items = [], invalid = [];
     rows.forEach((r, i) => {
       const idRaw = String(g(r, C.id) ?? "").trim(), ts = parseTs(g(r, C.ts));
@@ -244,6 +259,7 @@
     const all = Array.isArray(existing) ? existing.slice() : [];
     const sample = [...all.slice(0, 50), ...(incoming || []).slice(0, 50)];
     const C = colMap(sample), tk = C.ts, ik = C.id;
+    detectTsOrder([...all, ...(incoming || [])], tk);
     const tsKey = r => { const d = tk ? parseTs(r[tk]) : null; return d ? String(d.getTime()) : ""; };
     const idKey = r => (ik ? String(r[ik] ?? "").replace(/\D+/g, " ").trim() : "");
     const full = new Set(all.map(rowKey)), byTs = new Map();
