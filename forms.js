@@ -13,7 +13,7 @@
   const SEM_REG = "Sem regional";
   const VALIDADORES = ["LUIZA FRANÇA", "KETHELLY", "EDUARDA CARVALHO", "VITÓRIA"];
   const DEFAULT_EXCLUDED_IDS = ["47495708033"];
-  let excludedIds = new Set(DEFAULT_EXCLUDED_IDS);
+  let excludedIds = new Set(); // (não usado mais: o ✕ só oculta, não tira o ID da análise)
 
   const N = s => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -292,8 +292,26 @@
   };
   let forms = null, A = null, tratando = null, formsHeader = null, lastHeader = null; // tratando = ID que você está tratando agora
   const selectedIds = new Set();
-  excludedIds = new Set(store.get("forms_excluded_ids", DEFAULT_EXCLUDED_IDS));
-  DEFAULT_EXCLUDED_IDS.forEach(id => excludedIds.add(id));
+  // IDs ocultos (✕): só somem da lista e das cópias / BAIXAR FORMS. A análise (recusas, histórico, alterações
+  // de status/validador) continua intacta. O valor guardado é o carimbo do envio que foi ocultado: se chegar
+  // um envio NOVO do mesmo ID, ele volta para a lista. 0 = oculto sempre.
+  let hiddenMap = (() => {
+    const h = store.get("forms_hidden_ids", null);
+    if (h && typeof h === "object" && !Array.isArray(h)) return h;
+    const m = {};
+    DEFAULT_EXCLUDED_IDS.forEach(id => { m[id] = 0; });
+    (store.get("forms_excluded_ids", []) || []).forEach(id => { m[String(id)] = 0; }); // ✕ de antes continuam ocultos
+    store.set("forms_hidden_ids", m);
+    return m;
+  })();
+  const saveHidden = () => store.set("forms_hidden_ids", hiddenMap);
+  const caseTs = c => (c.last && c.last.ts ? c.last.ts.getTime() : 0);
+  const isHiddenCase = c => { const h = hiddenMap[c.id]; return h !== undefined && (h === 0 || h === caseTs(c)); };
+  const rowHidden = r => {
+    const C = A && A.cols; if (!C || !C.id) return false;
+    const d = C.ts ? parseTs(r[C.ts]) : null, t = d ? d.getTime() : 0;
+    return extractIds(r[C.id]).some(id => { const h = hiddenMap[id]; return h !== undefined && (h === 0 || h === t); });
+  };
   let edits = store.get("forms_edits", {}), byId = new Map();
   const SEM_VAL = "(sem validador)";
   const S = { st: "PENDENTE", reg: new Set(), val: new Set(), dt: "TUDO", sort: "old", q: "", limit: 100 };
@@ -458,7 +476,6 @@
   function reanalyze() {
     A = analyze(forms, edits);
     store.set("forms_edits", edits);
-    store.set("forms_excluded_ids", [...excludedIds]);
     byId = new Map(A.cases.map(c => [c.id, c]));
   }
   function saveViewState() {
@@ -468,6 +485,7 @@
 
   // ---------- filtros ----------
   const matches = (c, skip) => {
+    if (isHiddenCase(c)) return false;
     // Uma busca explícita deve encontrar o pacote independentemente da situação selecionada.
     if (!S.q && skip !== "st" && S.st !== "TODOS" && c.status !== S.st) return false;
     if (skip !== "reg" && S.reg.size && !S.reg.has(c.regiao)) return false;
@@ -490,7 +508,9 @@
   function render() { const list = currentList(); renderTop(list); renderList(list); }
   function renderTop(list) {
     // Os números dos cartões e dos filtros acompanham a data selecionada.
-    const all = S.dt === "TUDO" ? A.cases : A.cases.filter(c => c.dia === S.dt), reg = S.reg;
+    const all = (S.dt === "TUDO" ? A.cases : A.cases.filter(c => c.dia === S.dt)).filter(c => !isHiddenCase(c)), reg = S.reg;
+    const nHid = A.cases.filter(isHiddenCase).length, ub = $("#fUnhide");
+    if (ub) { ub.hidden = !nHid; ub.textContent = `👁 Mostrar ocultos (${nHid})`; }
     const valOk = c => !S.val.size || S.val.has(valOf(c));
     const inReg = all.filter(c => (!reg.size || reg.has(c.regiao)) && valOk(c));
     const cnt = (fn, l = inReg) => l.filter(fn).length;
@@ -569,7 +589,7 @@
     const mr = ["RECUSADA", "NÃO SUBIR"].includes(c.status) ? `<input class="mr" data-mr="${c.id}" placeholder="${c.status === "NÃO SUBIR" ? "Motivo da análise (escreva aqui)" : "Motivo da recusa (escreva aqui)"}" value="${esc(L.motRecusa)}">` : "";
     const hist = `<div class="h hh">${c.recusas}× recusada neste ID · ${c.tent} envio${c.tent > 1 ? "s" : ""}</div>` + c.att.map((a, ix) => ({ a, ix })).reverse().map(({ a, ix }) => `<div class="h"><span>${fmtDT(a.ts)}</span><span>${esc(a.validador) || "—"}</span><span class="bd ${BADGE[a.status] || ""}">${esc(badge(a.status))}</span><span>${esc(prettyMotivo(a.motivo)) || "—"}</span>${a.urls.length ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(a.urls[0])}" title="Abrir a foto desse envio">📷</a>` : ""}${a.motRecusa ? `<em>Motivo da recusa: ${esc(a.motRecusa)}</em>` : ""}</div>`).join("");
     return `<div class="fr${c.recusas >= 2 ? " hot" : ""}${L.edited ? " ed" : ""}${c.id === tratando ? " trat" : ""}${selectedIds.has(c.id) ? " selected" : ""}" data-id="${c.id}">
-  <div class="c1"><b class="idv">${c.id}</b><button class="mini" data-cp="${c.id}" title="Copiar ID">⧉</button><button class="mini remove-id" data-remove="${c.id}" title="Remover este ID da análise e das cópias">✕</button><div class="mu">${c.code ? esc(c.code) + " · " : ""}${esc(c.regiao)}${c.lote ? " · enviado em lote" : ""}</div>${L.focal ? `<div class="mu focal">Focal: ${esc(L.focal)}</div>` : ""}<button class="mini cpall" data-cpall="${c.id}" title="Copiar mensagem completa">⧉ Copiar mensagem ID, base e focal</button></div>
+  <div class="c1"><b class="idv">${c.id}</b><button class="mini" data-cp="${c.id}" title="Copiar ID">⧉</button><button class="mini remove-id" data-remove="${c.id}" title="Ocultar este ID: some da lista e não entra na cópia nem no BAIXAR FORMS">✕</button><div class="mu">${c.code ? esc(c.code) + " · " : ""}${esc(c.regiao)}${c.lote ? " · enviado em lote" : ""}</div>${L.focal ? `<div class="mu focal">Focal: ${esc(L.focal)}</div>` : ""}<button class="mini cpall" data-cpall="${c.id}" title="Copiar mensagem completa">⧉ Copiar mensagem ID, base e focal</button></div>
   <div class="c2">${sel} ${rec}${L.edited ? ' <span class="edtag">✎ editado</span>' : ""}<div class="vrow">${vsel}</div><div class="mu">${c.tent} envio${c.tent > 1 ? "s" : ""} · último ${fmtDT(L.ts)}</div></div>
   <div class="c3"><div class="mot" title="${esc(L.motivo)}">${esc(prettyMotivo(L.motivo)) || "—"}</div><div class="mu">Motorista: ${esc(L.motorista) || "—"}</div>${c.id === tratando ? tratTag(c.id) : ""}${mr}</div>
   <div class="c4">${caso}${msgTrat}${evid}${c.tent > 1 ? `<button class="mini" data-h="${c.id}">Histórico (${c.tent})</button>` : ""}</div>
@@ -604,14 +624,14 @@
   }
   function removeId(id) {
     if (!id) return;
-    excludedIds.add(String(id));
-    selectedIds.delete(String(id));
-    delete edits[id];
-    store.set("forms_excluded_ids", [...excludedIds]);
+    id = String(id);
+    const c = byId.get(id);
+    hiddenMap[id] = c ? caseTs(c) : 0;
+    saveHidden();
+    selectedIds.delete(id);
     tratando = tratando === id ? null : tratando;
-    reanalyze();
     render();
-    toast(`ID ${id} removido da análise e das cópias.`);
+    toast(`ID ${id} ocultado: some da lista e não entra na cópia nem no BAIXAR FORMS. Volta se chegar um envio novo desse ID, ou em “Mostrar ocultos”.`);
   }
   function toggleSelected(id) {
     id = String(id);
@@ -751,6 +771,7 @@
   }
   $("#fShot").onclick = e => printLista(false, e.currentTarget);
   $("#fCopyPrint").onclick = e => printLista(true, e.currentTarget);
+  $("#fUnhide").onclick = () => { hiddenMap = {}; saveHidden(); selectedIds.clear(); render(); toast("Os IDs ocultos voltaram para a lista."); };
   $("#fClear").onclick = () => {
     if (!A || !Object.keys(edits).length) return;
     if (confirm("Desfazer todas as alterações de status e motivo feitas aqui?")) { edits = {}; store.set("forms_edits", edits); reanalyze(); render(); }
@@ -785,8 +806,7 @@
     const header = Core.formsOrder(allHeaders, C, tsCol, true);
     let nEd = 0;
     const picked = out.map((r, i) => ({ r, i })).filter(({ r, i }) => {
-      const ids = C.id ? extractIds(r[C.id]) : [];
-      if (ids.some(id => excludedIds.has(id))) return false;
+      if (rowHidden(r)) return false;
       const d = parseTs(r[tsCol]);
       const inR = !!d && d >= from && d <= to, ed = edIdx.has(i);
       // Entra no arquivo: (a) resposta com carimbo dentro do período, ou (b) resposta de outro dia que
@@ -856,10 +876,7 @@
     const tsCol = C.ts || allHeaders.find(isTimestampKey) || "Carimbo de data/hora";
     const header = copyHeader(allHeaders, C, tsCol);
     // Só o envio ATUAL de cada pacote selecionado (1 selecionado = 1 linha; N selecionados = N linhas).
-    const rows = Core.currentRowIndexes(A, selectedIds).map(i => out[i]).filter(r => {
-      const ids = C.id ? extractIds(r[C.id]) : [];
-      return !ids.some(id => excludedIds.has(id));
-    });
+    const rows = Core.currentRowIndexes(A, selectedIds).map(i => out[i]).filter(r => !rowHidden(r));
     return rows.map(r => header.map(h => cellTxt(exportValue(r, h)).replace(/[\t\r\n]+/g, " ")).join("\t")).join("\n");
   }
   function selectedHeaderNames() {

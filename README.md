@@ -25,3 +25,5 @@ O **validador do Forms tem prioridade**: ao baixar/subir o Forms de novo, se a r
 - Qualquer clique na linha (copiar ID, mensagem, Abrir Logistic, histórico…) primeiro executa a ação e só depois abre o pacote centralizado (TRATANDO). Em status/validador, abre ao escolher a opção.
 
 **Correção (cópia para o Forms)**: ao selecionar pacotes (Ctrl+clique) e copiar (Ctrl+C ou "Copiar selecionadas para o Forms"), sai **uma linha por pacote, sempre o envio ATUAL** (a evidência mais recente), nunca o histórico. 1 pacote selecionado = 1 linha; vários = várias linhas, uma embaixo da outra, em ordem cronológica, a partir da coluna VALIDADOR, prontas para colar no Forms.
+
+**✕ ao lado do ID**: só **oculta** o pacote. Ele some da lista e **não entra** na cópia para o Forms nem no BAIXAR FORMS, mas continua na análise (recusas, histórico e as alterações de status/validador que você fez ficam guardadas). Se chegar um envio **novo** desse ID, ele volta sozinho para a lista. O botão **👁 Mostrar ocultos (N)** traz todos de volta.
