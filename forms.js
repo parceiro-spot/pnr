@@ -155,6 +155,15 @@
       if (!it.ids.length) { invalid.push(it); return; } // sem ID, ou ID digitado errado (truncado, 12 dígitos, nome…)
       items.push(it);
     });
+    // Status fora da lista padrão (novos, digitados na planilha): "Em revisão", "EM REVISAO " e "em revisão" são o mesmo status.
+    // Vale a grafia com acento; sem acento em nenhuma, a primeira que apareceu.
+    const KNOWN = new Set(["PENDENTE", "RECUSADA", "ANEXADA", "ANULADA", "FATURADA", "NÃO SUBIR"]), canon = new Map();
+    for (const it of items) {
+      if (KNOWN.has(it.status)) continue;
+      const k = N(it.status), cur = canon.get(k);
+      if (!cur || (/[^\x00-\x7F]/.test(it.status) && !/[^\x00-\x7F]/.test(cur))) canon.set(k, it.status);
+    }
+    for (const it of items) if (!KNOWN.has(it.status)) it.status = canon.get(N(it.status)) || it.status;
     const by = new Map();
     for (const it of items) for (const id of it.ids) {
       if (!by.has(id)) by.set(id, []);
@@ -319,9 +328,42 @@
   const valOf = c => { const v = String(c.last.validador || "").trim(); if (!v) return SEM_VAL; return VALIDADORES.find(x => N(x) === N(v)) || v; };
   const STATUS_TABS = [["PENDENTE", "A validar"], ["RECUSADA", "Recusadas"], ["ANEXADA", "Anexadas"], ["ANULADA", "Anuladas"], ["FATURADA", "Faturadas"], ["NÃO SUBIR", "Em analise"], ["TODOS", "Todas"]];
   const BADGE = { PENDENTE: "b-pen", RECUSADA: "b-rec", ANEXADA: "b-ane", ANULADA: "b-anu", FATURADA: "b-fat", "NÃO SUBIR": "b-nsub" };
-  const label = s => (STATUS_TABS.find(t => t[0] === s) || [0, s])[1];
   const SING = { PENDENTE: "A validar", RECUSADA: "Recusada", ANEXADA: "Anexada", ANULADA: "Anulada", FATURADA: "Faturada", "NÃO SUBIR": "Em analise" };
   const badge = s => SING[s] || s;
+
+  // ---------- status novos e cores ----------
+  // O .ods/.xlsx do Forms NÃO leva as cores dos chips da planilha (só o cinza das linhas), então a cor vem daqui:
+  // qualquer status que aparecer na coluna STATUS DA EVIDÊNCIA vira aba + opção no seletor automaticamente,
+  // e você pode trocar a cor (ou criar um status) em "🎨 Status e cores".
+  const BUILTIN_ST = new Set(["PENDENTE", "RECUSADA", "ANEXADA", "ANULADA", "FATURADA", "NÃO SUBIR"]);
+  let stCfg = (() => { const c = store.get("forms_status_cfg", null) || {}; return { custom: Array.isArray(c.custom) ? c.custom : [], colors: c.colors && typeof c.colors === "object" ? c.colors : {} }; })();
+  const saveStCfg = () => store.set("forms_status_cfg", stCfg);
+  let foundSt = [];
+  const scanStatuses = () => {
+    const set = new Set();
+    for (const c of A.cases) for (const a of c.att) if (a.status && !BUILTIN_ST.has(a.status)) set.add(a.status);
+    if (A.cases.length) for (const c of A.cases) if (c.status && !BUILTIN_ST.has(c.status)) set.add(c.status);
+    foundSt = [...set].sort((x, y) => x.localeCompare(y, "pt-BR"));
+  };
+  const extraStatuses = () => [...new Set([...stCfg.custom, ...foundSt])].filter(x => x && !BUILTIN_ST.has(x));
+  const cap = x => x.charAt(0) + x.slice(1).toLocaleLowerCase("pt-BR");
+  const statusTabs = () => [...STATUS_TABS.filter(t => t[0] !== "TODOS"), ...extraStatuses().map(x => [x, cap(x)]), ["TODOS", "Todas"]];
+  const label = x => (statusTabs().find(t => t[0] === x) || [0, x])[1];
+  const hex2rgb = h => { const m = /^#?([0-9a-f]{6})$/i.exec(h || ""); return m ? [0, 2, 4].map(i => parseInt(m[1].substr(i, 2), 16)) : [123, 136, 133]; };
+  const rgb2hex = a => "#" + a.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("");
+  const mixHex = (a, b, t) => { const x = hex2rgb(a), y = hex2rgb(b); return rgb2hex(x.map((v, i) => v + (y[i] - v) * t)); };
+  const textOn = h => { const [r, g, b] = hex2rgb(h); return (0.299 * r + 0.587 * g + 0.114 * b) > 170 ? "#2b2b2b" : "#ffffff"; };
+  const PALETTE = ["#6b7a99", "#0e8a8a", "#a0522d", "#7b5ea7", "#c2185b", "#2e7d32", "#ef6c00", "#455a64"];
+  const autoColor = x => { let h = 0; for (const ch of x) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return PALETTE[h % PALETTE.length]; };
+  const DEFAULT_COL = { PENDENTE: "#c9a000", RECUSADA: "#b3261e", ANEXADA: "#1e7e4f", ANULADA: "#1f5fbf", FATURADA: "#e6d4f7", "NÃO SUBIR": "#d86f6a" };
+  const stColor = x => stCfg.colors[x] || DEFAULT_COL[x] || autoColor(x);
+  // status padrão sem cor escolhida usam o CSS original; os demais (cor escolhida ou status novo) levam a cor inline
+  const stStyle = (x, kind) => {
+    if (x === "TODOS" || (BUILTIN_ST.has(x) && !stCfg.colors[x])) return "";
+    const c = stColor(x);
+    if (kind === "tab") return ` style="background:${mixHex(c, "#ffffff", .85)};border-color:${mixHex(c, "#ffffff", .35)};color:${mixHex(c, "#000000", .45)}"`;
+    return ` style="background:${c};border-color:${c};color:${textOn(c)}"`;
+  };
 
   // navegação entre as abas
   document.querySelectorAll("#nav button").forEach(b => b.onclick = () => {
@@ -477,6 +519,7 @@
     A = analyze(forms, edits);
     store.set("forms_edits", edits);
     byId = new Map(A.cases.map(c => [c.id, c]));
+    scanStatuses();
   }
   function saveViewState() {
     store.set("forms_view_state", { version: 2, st: S.st, reg: [...S.reg], val: [...S.val], dt: S.dt, sort: S.sort, q: S.q });
@@ -505,7 +548,7 @@
   };
 
   const currentList = () => A.cases.filter(c => matches(c)).sort(sorters[S.sort]);
-  function render() { const list = currentList(); renderTop(list); renderList(list); }
+  function render() { if (!statusTabs().some(t => t[0] === S.st)) S.st = "TODOS"; const list = currentList(); renderTop(list); renderList(list); }
   function renderTop(list) {
     // Os números dos cartões e dos filtros acompanham a data selecionada.
     const all = (S.dt === "TUDO" ? A.cases : A.cases.filter(c => c.dia === S.dt)).filter(c => !isHiddenCase(c)), reg = S.reg;
@@ -547,9 +590,10 @@
       S.limit = 100; render();
     });
 
-    $("#fSt").innerHTML = STATUS_TABS.map(([k, t]) => {
+    $("#fSt").innerHTML = statusTabs().map(([k, t]) => {
       const n = all.filter(c => (!S.reg.size || S.reg.has(c.regiao)) && valOk(c) && (k === "TODOS" || c.status === k)).length;
-      return `<button data-s="${k}" class="${S.st === k ? "on" : ""}">${t} <i>${n}</i></button>`;
+      const on = S.st === k;
+      return `<button data-s="${esc(k)}" class="${on ? "on" : ""}"${stStyle(k, on ? "tabOn" : "tab")}>${esc(t)} <i>${n}</i></button>`;
     }).join("");
     $("#fSt").querySelectorAll("button").forEach(b => b.onclick = () => { S.st = b.dataset.s; S.limit = 100; OPEN.fSt = false; render(); });
     // botões minimizados: mostram só a escolha atual; clicando abre as opções
@@ -580,14 +624,14 @@
     // Mensagens da aba "Mensagem Logistic" direto na linha: um clique copia a mensagem
     const msgTrat = `<div class="lgbox msgbox"><small>Mensagem Logistic</small><div class="msgchips">${MSGS.map(([t, m], i) => `<button type="button" class="mini msgchip" data-msgc="${i}" title="${esc(m)}">${esc(t)}</button>`).join("")}</div></div>`;
     const evid = u.length ? `<div class="fotos"><a class="btn ph" target="_blank" rel="noopener" href="${esc(u[0])}" title="Abrir a foto no Drive">📷 Ver foto</a>${u.slice(1).map((x, i) => `<a class="btn sm" target="_blank" rel="noopener" href="${esc(x)}" title="Abrir a foto ${i + 2}">📷 ${i + 2}</a>`).join("")}</div>` : (L.evid ? `<span class="mu" title="${esc(L.evid)}">arquivo sem link</span>` : "");
-    const SEL = [["RECUSADA", "RECUSADA"], ["ANEXADA", "ANEXADA"], ["ANULADA", "ANULADA"], ["FATURADA", "FATURADA"], ["NÃO SUBIR", "EM ANALISE"]];
+    const SEL = [["RECUSADA", "RECUSADA"], ["ANEXADA", "ANEXADA"], ["ANULADA", "ANULADA"], ["FATURADA", "FATURADA"], ["NÃO SUBIR", "EM ANALISE"], ...extraStatuses().map(x => [x, x])];
     const orig = L.edited ? L.origStatus : L.status;
     const extra = c.status !== "PENDENTE" && !SEL.some(x => x[0] === c.status) ? `<option value="${esc(c.status)}" selected>${esc(c.status)}</option>` : "";
-    const sel = `<select class="stsel" data-sel="${c.id}" data-s="${esc(c.status)}" title="Marcar o status deste pacote">${orig === "PENDENTE" ? `<option value=""${c.status === "PENDENTE" ? " selected" : ""}>— A validar —</option>` : ""}${SEL.map(([v, t]) => `<option value="${v}"${c.status === v ? " selected" : ""}>${t}</option>`).join("")}${extra}</select>`;
+    const sel = `<select class="stsel" data-sel="${c.id}" data-s="${esc(c.status)}"${stStyle(c.status, "sel")} title="Marcar o status deste pacote">${orig === "PENDENTE" ? `<option value=""${c.status === "PENDENTE" ? " selected" : ""}>— A validar —</option>` : ""}${SEL.map(([v, t]) => `<option value="${v}"${c.status === v ? " selected" : ""}>${t}</option>`).join("")}${extra}</select>`;
     const vNow = L.validador || "", vExtra = vNow && !VALIDADORES.some(v => N(v) === N(vNow)) ? `<option value="${esc(vNow)}" selected>${esc(vNow)}</option>` : "";
     const vsel = `<select class="valsel" data-val="${c.id}" data-v="${esc(N(vNow))}" title="Quem validou este pacote">${vNow ? "" : '<option value="" selected>— Validador —</option>'}${VALIDADORES.map(v => `<option value="${v}"${N(v) === N(vNow) ? " selected" : ""}>${v}</option>`).join("")}${vExtra}</select>`;
     const mr = ["RECUSADA", "NÃO SUBIR"].includes(c.status) ? `<input class="mr" data-mr="${c.id}" placeholder="${c.status === "NÃO SUBIR" ? "Motivo da análise (escreva aqui)" : "Motivo da recusa (escreva aqui)"}" value="${esc(L.motRecusa)}">` : "";
-    const hist = `<div class="h hh">${c.recusas}× recusada neste ID · ${c.tent} envio${c.tent > 1 ? "s" : ""}</div>` + c.att.map((a, ix) => ({ a, ix })).reverse().map(({ a, ix }) => `<div class="h"><span>${fmtDT(a.ts)}</span><span>${esc(a.validador) || "—"}</span><span class="bd ${BADGE[a.status] || ""}">${esc(badge(a.status))}</span><span>${esc(prettyMotivo(a.motivo)) || "—"}</span>${a.urls.length ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(a.urls[0])}" title="Abrir a foto desse envio">📷</a>` : ""}${a.motRecusa ? `<em>Motivo da recusa: ${esc(a.motRecusa)}</em>` : ""}</div>`).join("");
+    const hist = `<div class="h hh">${c.recusas}× recusada neste ID · ${c.tent} envio${c.tent > 1 ? "s" : ""}</div>` + c.att.map((a, ix) => ({ a, ix })).reverse().map(({ a, ix }) => `<div class="h"><span>${fmtDT(a.ts)}</span><span>${esc(a.validador) || "—"}</span><span class="bd ${BADGE[a.status] || ""}"${stStyle(a.status, "badge")}>${esc(badge(a.status))}</span><span>${esc(prettyMotivo(a.motivo)) || "—"}</span>${a.urls.length ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(a.urls[0])}" title="Abrir a foto desse envio">📷</a>` : ""}${a.motRecusa ? `<em>Motivo da recusa: ${esc(a.motRecusa)}</em>` : ""}</div>`).join("");
     return `<div class="fr${c.recusas >= 2 ? " hot" : ""}${L.edited ? " ed" : ""}${c.id === tratando ? " trat" : ""}${selectedIds.has(c.id) ? " selected" : ""}" data-id="${c.id}">
   <div class="c1"><b class="idv">${c.id}</b><button class="mini" data-cp="${c.id}" title="Copiar ID">⧉</button><button class="mini remove-id" data-remove="${c.id}" title="Ocultar este ID: some da lista e não entra na cópia nem no BAIXAR FORMS">✕</button><div class="mu">${c.code ? esc(c.code) + " · " : ""}${esc(c.regiao)}${c.lote ? " · enviado em lote" : ""}</div>${L.focal ? `<div class="mu focal">Focal: ${esc(L.focal)}</div>` : ""}<button class="mini cpall" data-cpall="${c.id}" title="Copiar mensagem completa">⧉ Copiar mensagem ID, base e focal</button></div>
   <div class="c2">${sel} ${rec}${L.edited ? ' <span class="edtag">✎ editado</span>' : ""}<div class="vrow">${vsel}</div><div class="mu">${c.tent} envio${c.tent > 1 ? "s" : ""} · último ${fmtDT(L.ts)}</div></div>
@@ -771,6 +815,41 @@
   }
   $("#fShot").onclick = e => printLista(false, e.currentTarget);
   $("#fCopyPrint").onclick = e => printLista(true, e.currentTarget);
+  // ---------- janela "Status e cores" ----------
+  function stCfgHtml() {
+    const list = [["PENDENTE", "A VALIDAR", 0], ["RECUSADA", "RECUSADA", 0], ["ANEXADA", "ANEXADA", 0], ["ANULADA", "ANULADA", 0], ["FATURADA", "FATURADA", 0], ["NÃO SUBIR", "EM ANALISE", 0], ...extraStatuses().map(x => [x, x, 1])];
+    const rows = list.map(([k, t, ex]) => {
+      const c = stColor(k), nCases = A ? A.cases.filter(z => z.status === k).length : 0;
+      return `<div class="frow"><span class="bd" style="background:${c};color:${textOn(c)};min-width:120px;text-align:center">${esc(t)}</span><input type="color" data-stc="${esc(k)}" value="${c}" title="Escolher a cor"><span class="mu">${ex ? (stCfg.custom.includes(k) ? "criado aqui" : "veio no arquivo") : "padrão"} · ${nCases} pacote${nCases === 1 ? "" : "s"}</span>${ex && stCfg.custom.includes(k) ? `<button type="button" class="mini" data-stdel="${esc(k)}" title="Remover este status criado aqui">✕</button>` : ""}</div>`;
+    }).join("");
+    return `<div class="dbox"><h2>🎨 Status e cores</h2><p class="mu">Qualquer status novo que aparecer na coluna <b>STATUS DA EVIDÊNCIA</b> do arquivo já entra sozinho (aba, seletor e cor). O arquivo baixado do Forms não leva a cor dos chips, por isso a cor se escolhe aqui e fica salva neste navegador.</p>${rows}<div class="frow"><input id="stNew" type="text" maxlength="40" placeholder="Novo status (ex.: EM REVISÃO)"><input id="stNewC" type="color" value="#6b7a99"><button id="stAdd" class="pri" type="button">＋ Adicionar</button></div><div class="frow"><button id="stReset" type="button">Restaurar cores padrão</button><button id="stClose" type="button">Fechar ✕</button></div></div>`;
+  }
+  function openStCfg() {
+    let ov = $("#stcfg");
+    const refill = () => { ov.innerHTML = stCfgHtml(); };
+    const apply = () => { saveStCfg(); if (A) render(); refill(); };
+    if (!ov) {
+      ov = document.createElement("div"); ov.id = "stcfg"; ov.className = "ov"; document.body.append(ov);
+      ov.addEventListener("click", e => {
+        if (e.target === ov || e.target.id === "stClose") { ov.hidden = true; return; }
+        const del = e.target.closest("[data-stdel]");
+        if (del) { const k = del.dataset.stdel; stCfg.custom = stCfg.custom.filter(x => x !== k); delete stCfg.colors[k]; apply(); return; }
+        if (e.target.id === "stReset") { stCfg.colors = {}; apply(); return; }
+        if (e.target.id === "stAdd") {
+          const raw = ($("#stNew").value || "").trim();
+          if (!raw) { toast("Digite o nome do novo status."); return; }
+          const nome = normStatus(raw);
+          if (BUILTIN_ST.has(nome)) { toast("Esse status já existe na lista padrão."); return; }
+          if (!stCfg.custom.includes(nome)) stCfg.custom.push(nome);
+          stCfg.colors[nome] = $("#stNewC").value;
+          apply(); toast(`Status “${nome}” adicionado. Ele já aparece na aba e no seletor de cada pacote.`);
+        }
+      });
+      ov.addEventListener("change", e => { const i = e.target.closest("[data-stc]"); if (i) { stCfg.colors[i.dataset.stc] = i.value; apply(); } });
+    }
+    refill(); ov.hidden = false;
+  }
+  $("#fStCfg").onclick = openStCfg;
   $("#fUnhide").onclick = () => { hiddenMap = {}; saveHidden(); selectedIds.clear(); render(); toast("Os IDs ocultos voltaram para a lista."); };
   $("#fClear").onclick = () => {
     if (!A || !Object.keys(edits).length) return;
