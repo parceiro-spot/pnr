@@ -88,6 +88,19 @@
   // ID do arquivo no Drive (open?id=…, /file/d/…/view, uc?id=…)
   const driveId = u => { const m = String(u).match(/[?&]id=([\w-]{15,})/) || String(u).match(/\/d\/([\w-]{15,})/); return m ? m[1] : ""; };
 
+  // Coluna do ID: 1º cabeçalho "ID" (se tiver IDs de 11 dígitos); 2º a COLUNA D (4ª coluna), mesmo com os
+  // cabeçalhos trocados/misturados; 3º a coluna que mais tem números de 11 dígitos.
+  const ID_COL_POS = 3; // D
+  function pickIdCol(rows, keys, byHeader) {
+    const sample = rows.slice(0, 400);
+    const score = k => sample.reduce((n, r) => n + ((String(r[k] ?? "").match(/\d+/g) || []).some(t => t.length === 11) ? 1 : 0), 0);
+    if (byHeader && score(byHeader) > 0) return byHeader;
+    const d = keys[ID_COL_POS];
+    if (d && score(d) > 0) return d;
+    let best = null, bestN = 0;
+    for (const k of keys) { const n = score(k); if (n > bestN) { best = k; bestN = n; } }
+    return best || byHeader || d || undefined;
+  }
   function colMap(rows) {
     const keys = [...new Set(rows.slice(0, 50).flatMap(r => Object.keys(r)))];
     const f = fn => keys.find(k => fn(N(k)));
@@ -95,7 +108,7 @@
       ts: f(k => k.startsWith("CARIMBO") || k.includes("DATAHORA")),
       validador: f(k => k === "VALIDADOR"),
       status: f(k => k.startsWith("STATUSDAEVID") || k === "STATUS"),
-      id: f(k => k === "ID"),
+      id: pickIdCol(rows, keys, f(k => k === "ID" || /^ID(DE|DO|DA)?(ENVIO|PACOTE|SHIPMENT)?$/.test(k))),
       base: f(k => k === "BASE"),
       motivo: f(k => k.startsWith("MOTIVO") && !/RESCUSA|RECUSA/.test(k)),
       evid: f(k => k.startsWith("EVIDENCIA")),
@@ -121,9 +134,10 @@
         focal: String(g(r, C.focal) ?? "").trim(), motorista: String(g(r, C.motorista) ?? "").trim(),
         email: String(g(r, C.email) ?? "").trim(), motRecusa: String(g(r, C.recusa) ?? "").trim()
       };
+      const before = it.ids.length;
       it.ids = it.ids.filter(id => !excludedIds.has(id));
-      if (!it.ids.length && idRaw) return;
-      if (!it.ids.length) { invalid.push(it); return; }
+      if (!it.ids.length && before) return; // ID válido, mas removido de propósito (✕)
+      if (!it.ids.length) { invalid.push(it); return; } // sem ID, ou ID digitado errado (truncado, 12 dígitos, nome…)
       items.push(it);
     });
     const by = new Map();
@@ -221,7 +235,35 @@
     return [...last.values()].sort((x, y) => (t(x.r) - t(y.r)) || (x.i - y.i));
   }
 
-  const Core = { formsOrder, chronoDedupe, currentRowIndexes, VALIDADORES, prettyMotivo, driveId, URLS, analyze, applyEdits, extractIds, extractCodes, regionOf, parseTs, normStatus, REGIONAIS, SEM_REG, LOGISTIC_URL, dayKey, fmtDay, fmtDT, esc };
+
+  const rowKey = r => JSON.stringify(Object.keys(r || {}).sort().map(k => [k, r[k]]));
+  // Junta o arquivo novo com o que já estava salvo. O carimbo (data/hora com milésimos) identifica a resposta:
+  // se a mesma resposta veio de novo com algo diferente (ID preenchido, validador, status…), vale a do arquivo novo
+  // e a antiga sai (antes ficavam as duas e a antiga, sem ID, virava "sem ID válido").
+  function mergeRows(existing, incoming) {
+    const all = Array.isArray(existing) ? existing.slice() : [];
+    const sample = [...all.slice(0, 50), ...(incoming || []).slice(0, 50)];
+    const C = colMap(sample), tk = C.ts, ik = C.id;
+    const tsKey = r => { const d = tk ? parseTs(r[tk]) : null; return d ? String(d.getTime()) : ""; };
+    const idKey = r => (ik ? String(r[ik] ?? "").replace(/\D+/g, " ").trim() : "");
+    const full = new Set(all.map(rowKey)), byTs = new Map();
+    all.forEach((r, i) => { const t = tsKey(r); if (t) { if (!byTs.has(t)) byTs.set(t, []); byTs.get(t).push(i); } });
+    let added = 0, updated = 0;
+    for (const row of incoming || []) {
+      const k = rowKey(row);
+      if (full.has(k)) continue;
+      const t = tsKey(row), same = t ? (byTs.get(t) || []) : [];
+      const a = idKey(row);
+      // mesma resposta = mesmo carimbo e (um dos IDs vazio ou IDs iguais)
+      const hit = same.find(i => { const b = idKey(all[i]); return !a || !b || a === b; });
+      if (hit !== undefined) { full.delete(rowKey(all[hit])); all[hit] = row; full.add(k); updated++; continue; }
+      all.push(row); full.add(k); added++;
+      if (t) { if (!byTs.has(t)) byTs.set(t, []); byTs.get(t).push(all.length - 1); }
+    }
+    return { rows: all, added, updated };
+  }
+
+  const Core = { colMap, mergeRows, formsOrder, chronoDedupe, currentRowIndexes, VALIDADORES, prettyMotivo, driveId, URLS, analyze, applyEdits, extractIds, extractCodes, regionOf, parseTs, normStatus, REGIONAIS, SEM_REG, LOGISTIC_URL, dayKey, fmtDay, fmtDT, esc };
   if (typeof module !== "undefined" && module.exports) module.exports = Core;
   root.FormsCore = Core;
   if (typeof document === "undefined") return;
@@ -266,11 +308,36 @@
     // Manter carimbos do Excel como número serial: parseTs converte o calendário
     // do arquivo explicitamente, sem deslocamento causado pelo fuso do navegador.
     const wb = XLSX.read(buf, { type: "array", cellDates: false });
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "", raw: true });
-    lastHeader = Object.keys(rows[0] || {}); // ordem das colunas do arquivo = ordem da planilha do Forms
-    return rows;
+    // O Forms baixado em .ods/.xlsx costuma ter VÁRIAS abas ("Respostas ao formulário 1, 2, 3…") e a
+    // primeira pode ser uma aba vazia/sem a coluna ID. Por isso lê todas as abas e usa as que têm a coluna ID
+    // (o cabeçalho pode estar em qualquer uma das primeiras linhas).
+    const sheets = wb.SheetNames.map(name => {
+      const ws = wb.Sheets[name];
+      const grid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true, blankrows: false });
+      const temId = v => (String(v ?? "").match(/\d+/g) || []).some(t => t.length === 11);
+      let hi = grid.slice(0, 15).findIndex(r => r.some(c => N(c) === "ID"));
+      // sem cabeçalho "ID": se a COLUNA D (ou qualquer coluna) da aba tem IDs de 11 dígitos, a 1ª linha é o cabeçalho
+      if (hi < 0 && grid.length > 1 && grid.slice(1, 200).some(r => temId(r[ID_COL_POS]) || r.some(temId))) hi = 0;
+      let rows = [];
+      if (hi >= 0) {
+        const head = grid[hi].map(c => String(c ?? "").trim());
+        rows = grid.slice(hi + 1).map(r => {
+          const o = {};
+          head.forEach((h, j) => { if (h) o[h] = r[j] ?? ""; });
+          return o;
+        }).filter(o => Object.values(o).some(v => String(v ?? "").trim() !== ""));
+      }
+      return { name, hi, head: hi >= 0 ? grid[hi].map(c => String(c ?? "").trim()).filter(Boolean) : [], rows };
+    });
+    const good = sheets.filter(s => s.hi >= 0 && s.rows.length);
+    if (!good.length) {
+      const nomes = sheets.map(s => `“${s.name}”`).join(", ");
+      throw new Error(`não achei a coluna “ID” em nenhuma aba (${nomes}). Confira se é o Forms baixado.`);
+    }
+    // ordem das colunas do arquivo = ordem da planilha do Forms (da aba com mais respostas)
+    lastHeader = good.slice().sort((a, b) => b.rows.length - a.rows.length)[0].head;
+    return good.flatMap(s => s.rows);
   }
-  const rowKey = r => JSON.stringify(Object.keys(r || {}).sort().map(k => [k, r[k]]));
   // As linhas do Forms ficam no IndexedDB (o localStorage estoura em ~5 MB com milhares de respostas
   // e, quando estourava, o Forms não era salvo e era preciso anexar de novo a cada vez).
   const idb = (() => {
@@ -303,15 +370,10 @@
       .catch(() => store.set("forms_rows", forms));
   }
   function mergeForms(next) {
-    const all = Array.isArray(forms) ? forms.slice() : [];
-    const seen = new Set(all.map(rowKey));
-    for (const row of next || []) {
-      const key = rowKey(row);
-      if (!seen.has(key)) { all.push(row); seen.add(key); }
-    }
-    forms = all;
+    const r = Core.mergeRows(forms, next);
+    forms = r.rows;
     saveRows();
-    return forms.length;
+    return r;
   }
   function wire(box, input, st, cb) {
     const go = async f => {
@@ -329,10 +391,12 @@
     await ready;
     const incoming = await readForms(f);
     if (lastHeader && lastHeader.length) { formsHeader = lastHeader.slice(); idb.set("forms_header", formsHeader).catch(() => { }); }
-    const before = Array.isArray(forms) ? forms.length : 0;
-    const total = mergeForms(incoming);
-    const added = total - before;
-    $("#fs1").textContent = `${f.name} · ${total.toLocaleString("pt-BR")} linhas salvas${added ? ` · +${added.toLocaleString("pt-BR")} novas` : ""}`;
+    const idsDe = rs => { const k = Core.colMap(rs).id; return (rs || []).flatMap(r => k ? extractIds(r[k]) : []); };
+    const idsAntes = new Set(idsDe(forms));
+    const r = mergeForms(incoming);
+    const idsNovos = new Set(idsDe(r.rows).filter(id => !idsAntes.has(id)));
+    $("#fs1").textContent = `${f.name} · ${incoming.length.toLocaleString("pt-BR")} linhas lidas · ${r.rows.length.toLocaleString("pt-BR")} salvas` +
+      (r.added || r.updated ? ` · +${r.added.toLocaleString("pt-BR")} respostas novas${r.updated ? ` · ${r.updated.toLocaleString("pt-BR")} atualizadas` : ""} · ${idsNovos.size.toLocaleString("pt-BR")} IDs novos` : " · nenhuma resposta nova neste arquivo (já estava salvo)");
     analyzeNow();
   });
   function analyzeNow() {
