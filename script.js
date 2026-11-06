@@ -2,6 +2,7 @@ const $ = s => document.querySelector(s);
 const ST = ["Com penalidade", "Aguardando comprovante"];
 let pnr = null, bsc = null, rows = [], total = 0, statusAll = {};
 let cur = ST[0], tipo = "TODOS", data = "TUDO", regional = "TODAS", charts = [];
+let showDatesInExport = false, exporting = false;
 const brl = v => v.toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
 const ddmm = d => d.split("-").reverse().join("/");
 const isXPT = b => (b || "").toString().trim().toUpperCase().startsWith("E");
@@ -183,7 +184,7 @@ const topLabel = {
 function vbar(id, keys, vals, colors, texts) {
   charts.push(new Chart($(id), {
     type: "bar", plugins: [topLabel],
-    data: {labels: keys.map(ddmm), datasets: [{data: vals, backgroundColor: colors, labels: texts}]},
+    data: {labels: keys.map(d => exporting && !showDatesInExport ? "" : ddmm(d)), datasets: [{data: vals, backgroundColor: colors, labels: texts}]},
     options: {maintainAspectRatio: false, animation: false, layout: {padding: {top: keys.length > 14 ? 90 : 24}},
       plugins: {legend: {display: false}, tooltip: {enabled: false}},
       scales: {y: {display: false}, x: {grid: {display: false}, ticks: {autoSkip: false, font: {size: 12, weight: "bold"}}}}}
@@ -196,7 +197,7 @@ function render() {
   const list = rows.filter(r => byTipo(r) && (data === "TUDO" || r.data === data)).map(r => ({...r, base: displayBase(r)}));
   const tot = list.reduce((t, r) => t + r.valor, 0);
   const P = $("#panel");
-  P.innerHTML = `<h2 class="ttl">${cur}</h2><p class="tsub">Tipo: ${tipo === "TODOS" ? "XPT + SVC" : tipo} · Data: ${data === "TUDO" ? "(Tudo)" : ddmm(data)} · ${list.length} casos · ${brl(tot)} em aberto</p>
+  P.innerHTML = `<h2 class="ttl">${cur}</h2><p class="tsub date-context">Tipo: ${tipo === "TODOS" ? "XPT + SVC" : tipo} · Data: ${data === "TUDO" ? "(Tudo)" : ddmm(data)} · ${list.length} casos · ${brl(tot)} em aberto</p>
   <div class="tabs">
    <div class="card"><h3>BASES × QUANTIDADE</h3><p>Número de casos por base. Vermelho = mais casos. Clique numa base para ver o detalhe.</p><table class="xl" id="t1"></table></div>
    <div class="card"><h3>BASE × VALOR EM ABERTO</h3><p>Soma do valor das PNR por base. Vermelho = maior valor. Clique numa base para ver o detalhe.</p><table class="xl" id="t2"></table></div>
@@ -227,18 +228,28 @@ function openDetail(base) {
   const tb = (s, cor) => {
     const l = items.filter(r => r.status === s).sort((a, b) => b.valor - a.valor);
     return `<div class="card"><table class="xl d"><tr><th style="background:${cor}">DATA</th><th style="background:${cor}">STATUS</th><th style="background:${cor}">ID DA PNR</th><th style="background:${cor}">QTD</th><th style="background:${cor}">VALOR DAS PNR</th></tr>` +
-      l.map(r => `<tr><td>${ddmm(r.data)}</td><td>${r.status}</td><td>${r.id}</td><td class=q>1</td><td class=v><div><span>R$</span><span>${num(r.valor)}</span></div></td></tr>`).join("") +
+      l.map(r => `<tr><td class="date-field">${ddmm(r.data)}</td><td>${r.status}</td><td>${r.id}</td><td class=q>1</td><td class=v><div><span>R$</span><span>${num(r.valor)}</span></div></td></tr>`).join("") +
       `<tr class=tot><td colspan=3>Total ${s}</td><td class=q>${l.length}</td><td class=v><div><span>R$</span><span>${num(l.reduce((t, r) => t + r.valor, 0))}</span></div></td></tr></table></div>`;
   };
-  $("#dpanel").innerHTML = `<h2 class="ttl">${base} · ${isXPT(base) ? "XPT" : "SVC"}</h2><p class="tsub">Detalhe de cada PNR · Data: ${data === "TUDO" ? "(Tudo)" : ddmm(data)} · ordenado do maior valor para o menor</p><div class="tabs">${tb(ST[0], "#70AD47")}${tb(ST[1], "#4472C4")}</div>`;
+  $("#dpanel").innerHTML = `<h2 class="ttl">${base} · ${isXPT(base) ? "XPT" : "SVC"}</h2><p class="tsub date-context">Detalhe de cada PNR · Data: ${data === "TUDO" ? "(Tudo)" : ddmm(data)} · ordenado do maior valor para o menor</p><div class="tabs">${tb(ST[0], "#70AD47")}${tb(ST[1], "#4472C4")}</div>`;
   $("#modal").hidden = false; $("#modal").scrollTop = 0; curBase = base;
 }
 let curBase = "";
 $("#mClose").onclick = () => $("#modal").hidden = true;
 $("#mShot").onclick = () => shot(false, $("#dpanel"), `PNR_detalhe_${curBase}.png`);
 $("#mCopy").onclick = () => shot(true, $("#dpanel"), `PNR_detalhe_${curBase}.png`);
+function syncDateToggle() {
+  const text = `📅 Datas no print: ${showDatesInExport ? "visíveis" : "ocultas"}`;
+  ["#pnrDateToggle", "#mDateToggle"].forEach(id => { const b = $(id); if (b) { b.textContent = text; b.classList.toggle("on", showDatesInExport); } });
+}
+function toggleExportDates() { showDatesInExport = !showDatesInExport; syncDateToggle(); }
+$("#pnrDateToggle").onclick = toggleExportDates;
+$("#mDateToggle").onclick = toggleExportDates;
+syncDateToggle();
 document.addEventListener("keydown", e => { if (e.key === "Escape") $("#modal").hidden = true; });
-const canvas = (el = $("#panel")) => html2canvas(el, {backgroundColor: getComputedStyle(document.body).backgroundColor, scale: 2});
+const canvas = (el = $("#panel")) => html2canvas(el, {backgroundColor: getComputedStyle(document.body).backgroundColor, scale: 2, onclone: doc => {
+  if (!showDatesInExport) doc.querySelectorAll(".date-field,.date-context").forEach(x => x.style.visibility = "hidden");
+}});
 async function dl(c, name) {
   const blob = await new Promise(r => c.toBlob(r));
   try { const D = window.claude && await claude.use("downloads"); if (D) { await D.save({filename: name, data: blob}); return; } } catch (e) { if (e && e.code === "declined") return; }
@@ -246,11 +257,19 @@ async function dl(c, name) {
 }
 const sync = () => document.querySelectorAll("#fStatus button, #fTipo button").forEach(x => x.classList.toggle("on", x._on()));
 async function shot(copy, el, nm) {
-  const c = await canvas(el);
-  if (copy) {
-    try { const b = await new Promise(r => c.toBlob(r)); await navigator.clipboard.write([new ClipboardItem({"image/png": b})]); alert("Print copiado! Cole com Ctrl+V."); return; } catch (e) {}
+  const isPanel = el === $("#panel");
+  exporting = true;
+  if (isPanel) render();
+  try {
+    const c = await canvas(el);
+    if (copy) {
+      try { const b = await new Promise(r => c.toBlob(r)); await navigator.clipboard.write([new ClipboardItem({"image/png": b})]); alert("Print copiado! Cole com Ctrl+V."); return; } catch (e) {}
+    }
+    await dl(c, nm || `PNR_${cur.replace(/ /g, "_")}_${tipo}.png`);
+  } finally {
+    exporting = false;
+    if (isPanel) render();
   }
-  await dl(c, nm || `PNR_${cur.replace(/ /g, "_")}_${tipo}.png`);
 }
 
 function setTheme(t) {
