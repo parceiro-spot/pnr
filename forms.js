@@ -121,6 +121,7 @@
     return best || byHeader || d || undefined;
   }
   function colMap(rows) {
+    rows = Array.isArray(rows) ? rows : []; // Forms ainda não carregado (primeiro anexo) = lista vazia
     const keys = [...new Set(rows.slice(0, 50).flatMap(r => Object.keys(r)))];
     const f = fn => keys.find(k => fn(N(k)));
     return {
@@ -140,6 +141,7 @@
 
   // Junta as respostas do Forms por ID do pacote e conta as recusas.
   function analyze(rows, edits) {
+    rows = Array.isArray(rows) ? rows : [];
     const C = colMap(rows), g = (r, k) => (k ? r[k] : "");
     detectTsOrder(rows, C.ts);
     const items = [], invalid = [];
@@ -499,7 +501,7 @@
     await ready;
     const incoming = await readForms(f);
     if (lastHeader && lastHeader.length) { formsHeader = lastHeader.slice(); idb.set("forms_header", formsHeader).catch(() => { }); }
-    const idsDe = rs => { const k = Core.colMap(rs).id; return (rs || []).flatMap(r => k ? extractIds(r[k]) : []); };
+    const idsDe = rs => { rs = Array.isArray(rs) ? rs : []; const k = Core.colMap(rs).id; return rs.flatMap(r => k ? extractIds(r[k]) : []); };
     const idsAntes = new Set(idsDe(forms));
     const r = mergeForms(incoming);
     const idsNovos = new Set(idsDe(r.rows).filter(id => !idsAntes.has(id)));
