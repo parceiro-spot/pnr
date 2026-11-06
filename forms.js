@@ -102,15 +102,20 @@
   // ID do arquivo no Drive (open?id=…, /file/d/…/view, uc?id=…)
   const driveId = u => { const m = String(u).match(/[?&]id=([\w-]{15,})/) || String(u).match(/\/d\/([\w-]{15,})/); return m ? m[1] : ""; };
 
-  // Coluna do ID: 1º cabeçalho "ID" (se tiver IDs de 11 dígitos); 2º a COLUNA D (4ª coluna), mesmo com os
-  // cabeçalhos trocados/misturados; 3º a coluna que mais tem números de 11 dígitos.
+  // O Forms usa a COLUNA D (4ª coluna) como ID. Ela é a fonte de verdade,
+  // mesmo quando o cabeçalho vem vazio, trocado ou com outro nome.
   const ID_COL_POS = 3; // D
   function pickIdCol(rows, keys, byHeader) {
     const sample = rows.slice(0, 400);
     const score = k => sample.reduce((n, r) => n + ((String(r[k] ?? "").match(/\d+/g) || []).some(t => t.length === 11) ? 1 : 0), 0);
-    if (byHeader && score(byHeader) > 0) return byHeader;
     const d = keys[ID_COL_POS];
+    // Não procurar outra coluna “parecida”: isso embaralha a identificação
+    // quando o arquivo tem mais de uma coluna com números.
     if (d && score(d) > 0) return d;
+    // Mantém a mesma regra mesmo quando os IDs não têm 11 dígitos ou vieram
+    // como texto vazio no pequeno recorte inicial.
+    if (d) return d;
+    if (byHeader && score(byHeader) > 0) return byHeader;
     let best = null, bestN = 0;
     for (const k of keys) { const n = score(k); if (n > bestN) { best = k; bestN = n; } }
     return best || byHeader || d || undefined;
@@ -380,38 +385,65 @@
     if (/\.csv$/i.test(f.name)) {
       return new Promise(res => Papa.parse(f, { header: true, skipEmptyLines: true, complete: r => { lastHeader = (r.meta && r.meta.fields) || Object.keys(r.data[0] || {}); res(r.data); } }));
     }
+    if (!root.XLSX || typeof root.XLSX.read !== "function") {
+      throw new Error("o leitor de planilhas não carregou. Recarregue a página e tente novamente; se persistir, verifique a conexão com a internet");
+    }
     const buf = await f.arrayBuffer();
     // Manter carimbos do Excel como número serial: parseTs converte o calendário
     // do arquivo explicitamente, sem deslocamento causado pelo fuso do navegador.
-    const wb = XLSX.read(buf, { type: "array", cellDates: false });
+    let wb;
+    try {
+      wb = root.XLSX.read(buf, { type: "array", cellDates: false, cellNF: false, cellText: false });
+    } catch (e) {
+      throw new Error(`não consegui abrir ${f.name}. Confira se o arquivo é um ODS/XLSX válido (${e.message || e})`);
+    }
     // O Forms baixado em .ods/.xlsx costuma ter VÁRIAS abas ("Respostas ao formulário 1, 2, 3…") e a
     // primeira pode ser uma aba vazia/sem a coluna ID. Por isso lê todas as abas e usa as que têm a coluna ID
     // (o cabeçalho pode estar em qualquer uma das primeiras linhas).
     const sheets = wb.SheetNames.map(name => {
       const ws = wb.Sheets[name];
-      const grid = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true, blankrows: false });
+      const grid = root.XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true, blankrows: false });
       const temId = v => (String(v ?? "").match(/\d+/g) || []).some(t => t.length === 11);
-      let hi = grid.slice(0, 15).findIndex(r => r.some(c => N(c) === "ID"));
+      const isIdHeader = c => {
+        const h = N(c);
+        return h === "ID" || (h.includes("ID") && /(ENVIO|PACOTE|SHIPMENT|REMESSA|PEDIDO)/.test(h));
+      };
+      // O Forms pode escrever "ID do envio", "ID do pacote" ou colocar uma
+      // linha de título antes do cabeçalho. A versão anterior só aceitava a
+      // célula exatamente igual a "ID" e acabava ignorando alguns ODS.
+      let hi = grid.slice(0, 30).findIndex(r => r.filter(c => String(c ?? "").trim() !== "").length >= 2 && r.some(isIdHeader));
       // sem cabeçalho "ID": se a COLUNA D (ou qualquer coluna) da aba tem IDs de 11 dígitos, a 1ª linha é o cabeçalho
       if (hi < 0 && grid.length > 1 && grid.slice(1, 200).some(r => temId(r[ID_COL_POS]) || r.some(temId))) hi = 0;
-      let rows = [];
+      let rows = [], head = [];
       if (hi >= 0) {
-        const head = grid[hi].map(c => String(c ?? "").trim());
+        const used = new Set();
+        head = grid[hi].map((c, j) => {
+          const original = String(c ?? "").trim();
+          // Não remover células de cabeçalho vazias: isso deslocaria a coluna
+          // D para a posição C e quebraria a identificação dos pacotes.
+          const base = original || `COLUNA ${String.fromCharCode(65 + j)}`;
+          let h = base, n = 2;
+          while (used.has(h)) h = `${base} (${n++})`;
+          used.add(h);
+          return h;
+        });
         rows = grid.slice(hi + 1).map(r => {
           const o = {};
-          head.forEach((h, j) => { if (h) o[h] = r[j] ?? ""; });
+          head.forEach((h, j) => { o[h] = r[j] ?? ""; });
           return o;
         }).filter(o => Object.values(o).some(v => String(v ?? "").trim() !== ""));
       }
-      return { name, hi, head: hi >= 0 ? grid[hi].map(c => String(c ?? "").trim()).filter(Boolean) : [], rows };
+      return { name, hi, head: hi >= 0 ? head : [], rows };
     });
     const good = sheets.filter(s => s.hi >= 0 && s.rows.length);
     if (!good.length) {
       const nomes = sheets.map(s => `“${s.name}”`).join(", ");
       throw new Error(`não achei a coluna “ID” em nenhuma aba (${nomes}). Confira se é o Forms baixado.`);
     }
-    // ordem das colunas do arquivo = ordem da planilha do Forms (da aba com mais respostas)
-    lastHeader = good.slice().sort((a, b) => b.rows.length - a.rows.length)[0].head;
+    // A ordem das colunas é a da primeira aba válida do arquivo, não a da aba
+    // com mais respostas. Assim a sequência original do Forms nunca é trocada
+    // por uma heurística de quantidade de linhas.
+    lastHeader = good[0].head;
     return good.flatMap(s => s.rows);
   }
   // As linhas do Forms ficam no IndexedDB (o localStorage estoura em ~5 MB com milhares de respostas
