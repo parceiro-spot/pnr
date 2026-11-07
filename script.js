@@ -185,7 +185,7 @@ function vbar(id, keys, vals, colors, texts) {
   charts.push(new Chart($(id), {
     type: "bar", plugins: [topLabel],
     data: {labels: keys.map(d => exporting && !showDatesInExport ? "" : ddmm(d)), datasets: [{data: vals, backgroundColor: colors, labels: texts}]},
-    options: {maintainAspectRatio: false, animation: false, layout: {padding: {top: keys.length > 14 ? 90 : 24}},
+    options: {maintainAspectRatio: false, animation: false, ...(exporting ? {devicePixelRatio: 2} : {}), layout: {padding: {top: keys.length > 14 ? 90 : 24}},
       plugins: {legend: {display: false}, tooltip: {enabled: false}},
       scales: {y: {display: false}, x: {grid: {display: false}, ticks: {autoSkip: false, font: {size: 12, weight: "bold"}}}}}
   }));
@@ -256,7 +256,7 @@ async function dl(c, name) {
   const a = document.createElement("a"); a.download = name; a.href = URL.createObjectURL(blob); a.click();
 }
 const sync = () => document.querySelectorAll("#fStatus button, #fTipo button").forEach(x => x.classList.toggle("on", x._on()));
-async function shot(copy, el, nm) {
+async function shot(copy, el = $("#panel"), nm) {
   const isPanel = el === $("#panel");
   exporting = true;
   if (isPanel) render();
