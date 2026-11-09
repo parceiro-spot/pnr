@@ -34,3 +34,8 @@ O **validador do Forms tem prioridade**: ao baixar/subir o Forms de novo, se a r
 **Atualização do PNR (nov/2026)**
 - LOGISTICS_PNR e SRM BSC ficam salvos no navegador via IndexedDB e reaparecem automaticamente na tela inicial após F5 ou ao reabrir a página. A caixa informa o nome do arquivo e a quantidade de linhas salvas.
 - As datas começam **ocultas por padrão** na Análise PNR e no detalhe de uma base. O botão **Mostrar datas na foto** ativa a exibição; quando ativadas, aparecem na tela e no PNG baixado ou copiado. Ao clicar novamente, voltam a ficar ocultas e acinzentadas.
+
+**Ocultar data nos gráficos por data (nov/2026)**
+- Os cards **Quantidade por data** e **Valor por data** têm o botão **Ocultar data**, que já vem **ATIVADO**: o gráfico **não aparece** no print (baixado ou copiado) e fica **meio transparente** na tela para mostrar que está de fora.
+- Ao **desativar**, o gráfico volta ao normal na tela e entra no print, com as datas visíveis.
+- Cada gráfico tem o seu botão, e a escolha fica salva no navegador. O botão "Mostrar datas na foto" do topo continua valendo para os textos de data (subtítulo e tabelas de detalhe), mas não controla mais os gráficos.

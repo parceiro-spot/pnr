@@ -3,6 +3,15 @@ const ST = ["Com penalidade", "Aguardando comprovante"];
 let pnr = null, bsc = null, rows = [], total = 0, statusAll = {};
 let cur = ST[0], tipo = "TODOS", data = "TUDO", regional = "TODAS", charts = [];
 let showDatesInExport = false, exporting = false;
+// "Ocultar data" nos gráficos por data: ativado (padrão) = o gráfico NÃO sai no print e fica meio transparente na tela.
+const hideDateChart = (() => {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem("pnr_ocultar_data_graficos") || "{}") || {}; } catch (e) {}
+  return {c3: saved.c3 !== false, c4: saved.c4 !== false};
+})();
+const saveHideDateChart = () => { try { localStorage.setItem("pnr_ocultar_data_graficos", JSON.stringify(hideDateChart)); } catch (e) {} };
+const dateHideLabel = on => on ? "🙈 Ocultar data: ATIVADO" : "👁 Ocultar data: desativado";
+const dateChartCard = (id, title, sub) => `<div class="card date-chart${hideDateChart[id] ? " is-hidden" : ""}" data-chart="${id}" style="margin-top:12px"><div class="chart-head"><h3>${title}</h3><button type="button" class="date-hide-btn${hideDateChart[id] ? " on" : ""}" data-chart="${id}" aria-pressed="${hideDateChart[id]}" title="Ativado: este gráfico não aparece no print e fica meio transparente na tela">${dateHideLabel(hideDateChart[id])}</button></div><p>${sub}</p><div class="cv" style="height:320px"><canvas id="${id}"></canvas></div></div>`;
 
 // O Forms usa IndexedDB porque os arquivos podem ser grandes. O PNR segue o mesmo padrão
 // para restaurar LOGISTICS_PNR e BSC automaticamente depois de F5 ou ao reabrir a página.
@@ -216,7 +225,7 @@ const topLabel = {
 function vbar(id, keys, vals, colors, texts) {
   charts.push(new Chart($(id), {
     type: "bar", plugins: [topLabel],
-    data: {labels: keys.map(d => exporting && !showDatesInExport ? "" : ddmm(d)), datasets: [{data: vals, backgroundColor: colors, labels: texts}]},
+    data: {labels: keys.map(d => ddmm(d)), datasets: [{data: vals, backgroundColor: colors, labels: texts}]},
     options: {maintainAspectRatio: false, animation: false, ...(exporting ? {devicePixelRatio: 2} : {}), layout: {padding: {top: keys.length > 14 ? 90 : 24}},
       plugins: {legend: {display: false}, tooltip: {enabled: false}},
       scales: {y: {display: false}, x: {grid: {display: false}, ticks: {autoSkip: false, font: {size: 12, weight: "bold"}}}}}
@@ -234,8 +243,14 @@ function render() {
    <div class="card"><h3>BASES × QUANTIDADE</h3><p>Número de casos por base. Vermelho = mais casos. Clique numa base para ver o detalhe.</p><table class="xl" id="t1"></table></div>
    <div class="card"><h3>BASE × VALOR EM ABERTO</h3><p>Soma do valor das PNR por base. Vermelho = maior valor. Clique numa base para ver o detalhe.</p><table class="xl" id="t2"></table></div>
   </div>
-  <div class="card" style="margin-top:12px"><h3>Quantidade por data</h3><p>Casos por data do caso (considera o status e o tipo escolhidos, todas as datas).</p><div class="cv" style="height:320px"><canvas id="c3"></canvas></div></div>
-  <div class="card" style="margin-top:12px"><h3>Valor por data</h3><p>Valor em aberto por data do caso.</p><div class="cv" style="height:320px"><canvas id="c4"></canvas></div></div>`;
+  ${dateChartCard("c3", "Quantidade por data", "Casos por data do caso (considera o status e o tipo escolhidos, todas as datas).")}
+  ${dateChartCard("c4", "Valor por data", "Valor em aberto por data do caso.")}`;
+  P.querySelectorAll(".date-hide-btn").forEach(b => b.onclick = () => {
+    const id = b.dataset.chart; hideDateChart[id] = !hideDateChart[id]; saveHideDateChart();
+    b.classList.toggle("on", hideDateChart[id]); b.setAttribute("aria-pressed", String(hideDateChart[id]));
+    b.textContent = dateHideLabel(hideDateChart[id]);
+    b.closest(".date-chart").classList.toggle("is-hidden", hideDateChart[id]);
+  });
   if (!list.length) { P.insertAdjacentHTML("beforeend", '<div class="msg">Sem registros nesse filtro.</div>'); return; }
   const A = agg(list), keys = Object.keys(A);
   const byQ = [...keys].sort((a, b) => A[b].q - A[a].q || A[b].v - A[a].v), byV = [...keys].sort((a, b) => A[b].v - A[a].v);
@@ -286,6 +301,8 @@ $("#mDateToggle").onclick = toggleExportDates;
 syncDateToggle();
 document.addEventListener("keydown", e => { if (e.key === "Escape") $("#modal").hidden = true; });
 const canvas = (el = $("#panel")) => html2canvas(el, {backgroundColor: getComputedStyle(document.body).backgroundColor, scale: 2, onclone: doc => {
+  doc.querySelectorAll(".date-chart.is-hidden").forEach(x => x.style.display = "none");
+  doc.querySelectorAll(".date-hide-btn").forEach(x => x.style.display = "none");
   if (!showDatesInExport) doc.querySelectorAll(".date-field,.date-context").forEach(x => {
     x.classList.add("date-obscured");
     x.style.color = "transparent";

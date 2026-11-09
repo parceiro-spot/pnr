@@ -211,3 +211,10 @@ button.btn.lgan:hover{background:#1f2937;color:#fff;border-color:#1f2937}
 #pnrDateToggle.dates-hidden,#mDateToggle.dates-hidden{background:#c8cfcc;color:#26322f;border-color:#98a39f;box-shadow:inset 0 0 0 2px rgba(255,255,255,.45);font-weight:800}
 body.dates-hidden .date-field,body.dates-hidden .date-context{color:#7b8581!important;background:#e1e5e3!important;border-radius:5px;padding-left:4px;padding-right:4px;text-decoration:line-through;text-decoration-color:#98a39f}
 .date-obscured{color:transparent!important;background:#c8cfcc!important;border-radius:5px!important;text-shadow:none!important}
+
+/* Ocultar data (gráficos por data): ativado = fora do print + meio transparente na tela */
+.chart-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.date-hide-btn{cursor:pointer;font-weight:700;font-size:12px;padding:6px 12px;border-radius:8px;border:1px solid var(--ln,#c9d0cd);background:transparent;color:inherit}
+.date-hide-btn.on{background:#c8cfcc;color:#26322f;border-color:#98a39f;font-weight:800}
+.date-chart{transition:opacity .15s}
+.date-chart.is-hidden .chart-head h3,.date-chart.is-hidden>p,.date-chart.is-hidden .cv{opacity:.35}
