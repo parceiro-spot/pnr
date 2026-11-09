@@ -29,3 +29,8 @@ O **validador do Forms tem prioridade**: ao baixar/subir o Forms de novo, se a r
 **✕ ao lado do ID**: só **oculta** o pacote. Ele some da lista e **não entra** na cópia para o Forms nem no BAIXAR FORMS, mas continua na análise (recusas, histórico e as alterações de status/validador que você fez ficam guardadas). Se chegar um envio **novo** desse ID, ele volta sozinho para a lista. O botão **👁 Mostrar ocultos (N)** traz todos de volta.
 
 **Status novos e cores**: qualquer status que aparecer na coluna STATUS DA EVIDÊNCIA do arquivo vira sozinho uma aba, uma opção no seletor de cada pacote e ganha uma cor. O arquivo baixado do Forms (.ods/.xlsx) não leva a cor dos chips da planilha, então a cor se escolhe no botão **🎨 Status e cores** (também dá para criar um status novo ali). As escolhas ficam salvas no navegador.
+
+
+**Atualização do PNR (nov/2026)**
+- LOGISTICS_PNR e SRM BSC ficam salvos no navegador via IndexedDB e reaparecem automaticamente na tela inicial após F5 ou ao reabrir a página. A caixa informa o nome do arquivo e a quantidade de linhas salvas.
+- As datas começam **ocultas por padrão** na Análise PNR e no detalhe de uma base. O botão **Mostrar datas na foto** ativa a exibição; quando ativadas, aparecem na tela e no PNG baixado ou copiado. Ao clicar novamente, voltam a ficar ocultas e acinzentadas.

@@ -3,6 +3,38 @@ const ST = ["Com penalidade", "Aguardando comprovante"];
 let pnr = null, bsc = null, rows = [], total = 0, statusAll = {};
 let cur = ST[0], tipo = "TODOS", data = "TUDO", regional = "TODAS", charts = [];
 let showDatesInExport = false, exporting = false;
+
+// O Forms usa IndexedDB porque os arquivos podem ser grandes. O PNR segue o mesmo padrão
+// para restaurar LOGISTICS_PNR e BSC automaticamente depois de F5 ou ao reabrir a página.
+const pnrStore = (() => {
+  let dbp = null;
+  const open = () => dbp || (dbp = new Promise((resolve, reject) => {
+    try {
+      const req = indexedDB.open("analise_pnr", 1);
+      req.onupgradeneeded = () => req.result.createObjectStore("kv");
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    } catch (e) { reject(e); }
+  }));
+  const run = (mode, fn) => open().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction("kv", mode), store = tx.objectStore("kv");
+    let req;
+    try { req = fn(store); } catch (e) { reject(e); return; }
+    if (req) { req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); }
+    else { tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }
+  }));
+  return {
+    get(key) { return run("readonly", st => st.get(key)); },
+    set(key, value) { return run("readwrite", st => st.put(value, key)); }
+  };
+})();
+const savePnrData = (key, value) => pnrStore.set(key, value).catch(() => {
+  try { localStorage.setItem("pnr_" + key, JSON.stringify(value)); } catch (e) {}
+});
+const getPnrData = async key => {
+  try { const value = await pnrStore.get(key); if (value != null) return value; } catch (e) {}
+  try { return JSON.parse(localStorage.getItem("pnr_" + key)); } catch (e) { return null; }
+};
 const brl = v => v.toLocaleString("pt-BR", {style: "currency", currency: "BRL"});
 const ddmm = d => d.split("-").reverse().join("/");
 const isXPT = b => (b || "").toString().trim().toUpperCase().startsWith("E");
@@ -73,7 +105,7 @@ function load(file, st, cb, box, keep) {
       $(st).textContent = "lendo " + file.name + "… " + Math.min(99, Math.round(res.meta.cursor / file.size * 100)) + "%";
     },
     complete: () => {
-      cb(out); $(st).textContent = file.name + " · " + out.length.toLocaleString("pt-BR") + " linhas";
+      cb(out, file); $(st).textContent = file.name + " · " + out.length.toLocaleString("pt-BR") + " linhas";
       $(box).classList.add("ok");
       setTimeout(build, 30);
     },
@@ -86,8 +118,8 @@ function wire(box, input, st, cb, mkKeep) {
   $(box).ondragover = e => e.preventDefault();
   $(box).ondrop = e => { e.preventDefault(); go(e.dataTransfer.files[0]); };
 }
-wire("#d1", "#f1", "#s1", d => pnr = d);
-wire("#d2", "#f2", "#s2", d => bsc = d, bscKeep);
+wire("#d1", "#f1", "#s1", (d, file) => { pnr = d; savePnrData("pnr_rows", d); savePnrData("pnr_name", file?.name || "LOGISTICS_PNR salvo"); });
+wire("#d2", "#f2", "#s2", (d, file) => { bsc = d; savePnrData("bsc_rows", d); savePnrData("bsc_name", file?.name || "SRM BSC salvo"); }, bscKeep);
 
 const vazio = v => { v = (v || "").toString().trim().toUpperCase(); return ["", "NULL", "ND", "#N/D"].includes(v) || v.startsWith("BRN"); };
 
@@ -239,16 +271,28 @@ $("#mClose").onclick = () => $("#modal").hidden = true;
 $("#mShot").onclick = () => shot(false, $("#dpanel"), `PNR_detalhe_${curBase}.png`);
 $("#mCopy").onclick = () => shot(true, $("#dpanel"), `PNR_detalhe_${curBase}.png`);
 function syncDateToggle() {
-  const text = `📅 Datas no print: ${showDatesInExport ? "visíveis" : "ocultas"}`;
-  ["#pnrDateToggle", "#mDateToggle"].forEach(id => { const b = $(id); if (b) { b.textContent = text; b.classList.toggle("on", showDatesInExport); } });
+  const text = showDatesInExport ? "✅ Datas visíveis na foto" : "📅 Mostrar datas na foto";
+  ["#pnrDateToggle", "#mDateToggle"].forEach(id => { const b = $(id); if (b) { b.textContent = text; b.classList.toggle("on", showDatesInExport); b.classList.toggle("dates-hidden", !showDatesInExport); } });
+  document.body.classList.toggle("dates-hidden", !showDatesInExport);
 }
-function toggleExportDates() { showDatesInExport = !showDatesInExport; syncDateToggle(); }
+function toggleExportDates() {
+  showDatesInExport = !showDatesInExport;
+  syncDateToggle();
+  // Re-renderiza o painel para deixar imediatamente evidente quais datas serão ocultadas.
+  if (rows.length && !$("#app").hidden) render();
+}
 $("#pnrDateToggle").onclick = toggleExportDates;
 $("#mDateToggle").onclick = toggleExportDates;
 syncDateToggle();
 document.addEventListener("keydown", e => { if (e.key === "Escape") $("#modal").hidden = true; });
 const canvas = (el = $("#panel")) => html2canvas(el, {backgroundColor: getComputedStyle(document.body).backgroundColor, scale: 2, onclone: doc => {
-  if (!showDatesInExport) doc.querySelectorAll(".date-field,.date-context").forEach(x => x.style.visibility = "hidden");
+  if (!showDatesInExport) doc.querySelectorAll(".date-field,.date-context").forEach(x => {
+    x.classList.add("date-obscured");
+    x.style.color = "transparent";
+    x.style.backgroundColor = "#c8cfcc";
+    x.style.borderRadius = "5px";
+    x.style.textShadow = "none";
+  });
 }});
 async function dl(c, name) {
   const blob = await new Promise(r => c.toBlob(r));
@@ -281,3 +325,18 @@ function setTheme(t) {
 $("#theme").onclick = () => setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
 { let t = null; try { t = localStorage.getItem("tema"); } catch (e) {}
   setTheme(t || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")); }
+
+
+// Restaura automaticamente os dois arquivos da Análise PNR, como a Análise Forms.
+(async function restoreSavedPnr(){
+  const [savedPnr, savedBsc, pnrName, bscName] = await Promise.all([
+    getPnrData("pnr_rows"), getPnrData("bsc_rows"), getPnrData("pnr_name"), getPnrData("bsc_name")
+  ]);
+  if (Array.isArray(savedPnr) && savedPnr.length) {
+    pnr = savedPnr; $("#s1").textContent = `${pnrName || "LOGISTICS_PNR salvo"} · ${pnr.length.toLocaleString("pt-BR")} linhas salvas`; $("#d1").classList.add("ok");
+  }
+  if (Array.isArray(savedBsc) && savedBsc.length) {
+    bsc = savedBsc; $("#s2").textContent = `${bscName || "SRM BSC salvo"} · ${bsc.length.toLocaleString("pt-BR")} linhas salvas`; $("#d2").classList.add("ok");
+  }
+  if (pnr && bsc) setTimeout(build, 30);
+})();
