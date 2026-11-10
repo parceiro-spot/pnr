@@ -378,6 +378,12 @@
     return extractIds(r[C.id]).some(id => { const h = hiddenMap[id]; return h !== undefined && (h === 0 || h === t); });
   };
   let edits = store.get("forms_edits", {}), byId = new Map();
+  // Status alterado localmente fica visualmente na aba atual até a próxima
+  // sincronização bem-sucedida do Forms ao vivo. Assim, ao marcar ANEXADA,
+  // o pacote não some imediatamente de A validar.
+  let heldStatuses = store.get("forms_status_holds", {}) || {};
+  const saveHeldStatuses = () => store.set("forms_status_holds", heldStatuses);
+  const shownStatus = c => heldStatuses[c.id] || c.status;
   const SEM_VAL = "(sem validador)";
   const S = { st: "PENDENTE", reg: new Set(), val: new Set(), dt: "TUDO", sort: "old", q: "", limit: 100 };
   // nome do validador do pacote (usa o nome padrão da lista quando bate, senão o que veio do Forms)
@@ -680,6 +686,9 @@
       liveLast = Date.now();
       const got = await liveFetchAll();
       const pr = { data: got.rows };
+      // A partir deste ponto a leitura do Forms foi bem-sucedida: libera os
+      // status locais para que os pacotes sigam para suas abas corretas.
+      if (Object.keys(heldStatuses).length) { heldStatuses = {}; saveHeldStatuses(); }
       const before = forms ? forms.length : 0;
       // espelha a planilha: o que foi apagado lá (ou teve o ID trocado) sai do dash; as alterações que você marcou ficam guardadas
       let removed = 0, warnTxt = "";
@@ -732,11 +741,11 @@
   const matches = (c, skip) => {
     if (isHiddenCase(c)) return false;
     // Uma busca explícita deve encontrar o pacote independentemente da situação selecionada.
-    if (!S.q && skip !== "st" && S.st !== "TODOS" && c.status !== S.st) return false;
+    if (!S.q && skip !== "st" && S.st !== "TODOS" && shownStatus(c) !== S.st) return false;
     if (skip !== "reg" && S.reg.size && !S.reg.has(c.regiao)) return false;
     if (skip !== "val" && S.val.size && !S.val.has(valOf(c))) return false;
     // na aba "A validar" entram os pendentes de TODOS os dias: o que ainda não foi validado não some ao trocar/abrir em outra data
-    if (S.dt !== "TUDO" && c.dia !== S.dt && !(S.st === "PENDENTE" && c.status === "PENDENTE")) return false;
+    if (S.dt !== "TUDO" && c.dia !== S.dt && !(S.st === "PENDENTE" && shownStatus(c) === "PENDENTE")) return false;
     if (S.q) {
       const q = N(S.q), hay = N([c.id, c.idShow, c.code, c.regiao, c.status, c.last.motorista, c.last.focal, c.last.motivo, c.last.motRecusa, c.last.validador, ...c.recusaMotivos].join(" "));
       if (!hay.includes(q)) return false;
@@ -759,7 +768,7 @@
   function renderTop(list) {
     // Os números dos cartões e dos filtros acompanham a data selecionada.
     const allDay = (S.dt === "TUDO" ? A.cases : A.cases.filter(c => c.dia === S.dt)).filter(c => !isHiddenCase(c)), reg = S.reg;
-    const pendAll = A.cases.filter(c => c.status === "PENDENTE" && !isHiddenCase(c)); // pendentes de todos os dias
+    const pendAll = A.cases.filter(c => shownStatus(c) === "PENDENTE" && !isHiddenCase(c)); // pendentes de todos os dias
     const all = S.st === "PENDENTE" ? [...new Map([...allDay, ...pendAll].map(c => [c.id, c])).values()] : allDay;
     const nHid = A.cases.filter(isHiddenCase).length, ub = $("#fUnhide");
     if (ub) { ub.hidden = !nHid; ub.textContent = `👁 Mostrar ocultos (${nHid})`; }
@@ -770,7 +779,7 @@
     $("#fkpi").innerHTML = [
       ["IDs únicos", inReg.filter(c => !c.extra).length, `${responseCount.toLocaleString("pt-BR")} respostas no Forms`],
       ["A validar", pendAll.filter(c => (!reg.size || reg.has(c.regiao)) && valOk(c)).length, "sem status (todos os dias)"],
-      ["Recusadas", cnt(c => c.status === "RECUSADA"), "última resposta = recusada"],
+      ["Recusadas", cnt(c => shownStatus(c) === "RECUSADA"), "última resposta = recusada"],
       ["Reincidentes", cnt(c => c.recusas >= 2 && !c.extra), "recusados 2× ou mais"],
       ["Alterados por você", all.filter(c => c.last.edited).length, "entram no BAIXAR FORMS"]
     ].map(([t, v, s]) => `<div class="k"><small>${t}</small><div>${v.toLocaleString("pt-BR")}</div><em>${s}</em></div>`).join("");
@@ -800,13 +809,13 @@
     });
 
     $("#fSt").innerHTML = statusTabs().map(([k, t]) => {
-      const n = (k === "PENDENTE" ? pendAll : allDay).filter(c => (!S.reg.size || S.reg.has(c.regiao)) && valOk(c) && (k === "TODOS" || c.status === k)).length;
+      const n = (k === "PENDENTE" ? pendAll : allDay).filter(c => (!S.reg.size || S.reg.has(c.regiao)) && valOk(c) && (k === "TODOS" || shownStatus(c) === k)).length;
       const on = S.st === k;
       return `<button data-s="${esc(k)}" class="${on ? "on" : ""}"${stStyle(k, on ? "tabOn" : "tab")}>${esc(t)} <i>${n}</i></button>`;
     }).join("");
     $("#fSt").querySelectorAll("button").forEach(b => b.onclick = () => { S.st = b.dataset.s; S.limit = 100; OPEN.fSt = false; render(); });
     // botões minimizados: mostram só a escolha atual; clicando abre as opções
-    const nSt = (S.st === "PENDENTE" ? pendAll : allDay).filter(c => (!S.reg.size || S.reg.has(c.regiao)) && valOk(c) && (S.st === "TODOS" || c.status === S.st)).length;
+    const nSt = (S.st === "PENDENTE" ? pendAll : allDay).filter(c => (!S.reg.size || S.reg.has(c.regiao)) && valOk(c) && (S.st === "TODOS" || shownStatus(c) === S.st)).length;
     const tog = (id, txt, n, act) => { const t = $("#" + id + "T"); t.innerHTML = `${esc(txt)} <i>${n}</i> <span class="car">▾</span>`; t.classList.toggle("act", act); };
     tog("fReg", reg.size ? [...reg].join(" + ") : "Todas", reg.size ? base.filter(c => reg.has(c.regiao)).length : base.length, reg.size > 0);
     tog("fVal", S.val.size ? [...S.val].join(" + ") : "Todos", S.val.size ? vbase.filter(c => S.val.has(valOf(c))).length : vbase.length, S.val.size > 0);
@@ -988,6 +997,12 @@
       if (el.value === "" || normStatus(el.value) === orig) { delete ed.s; delete ed.os; }
       else { ed.s = el.value; ed.os = orig; }
       if (!hasDesc(ed.s ? normStatus(ed.s) : orig)) { delete ed.m; delete ed.om; }
+      // Mantém a linha na situação que estava sendo trabalhada até o próximo
+      // Forms ao vivo. Na próxima sincronização o hold é limpo e o pacote
+      // segue para a aba do novo status.
+      if (el.value && normStatus(el.value) !== orig) heldStatuses[c.id] = orig;
+      else delete heldStatuses[c.id];
+      saveHeldStatuses();
     }
     keepEdit(c, ed); reanalyze();
     // troca só essa linha (ela continua na lista até você mudar o filtro) e atualiza os contadores
