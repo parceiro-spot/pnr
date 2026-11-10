@@ -39,3 +39,8 @@ O **validador do Forms tem prioridade**: ao baixar/subir o Forms de novo, se a r
 - Os cards **Quantidade por data** e **Valor por data** têm o botão **Ocultar data**, que já vem **ATIVADO**: o gráfico **não aparece** no print (baixado ou copiado) e fica **meio transparente** na tela para mostrar que está de fora.
 - Ao **desativar**, o gráfico volta ao normal na tela e entra no print, com as datas visíveis.
 - Cada gráfico tem o seu botão, e a escolha fica salva no navegador. O botão "Mostrar datas na foto" do topo continua valendo para os textos de data (subtítulo e tabelas de detalhe), mas não controla mais os gráficos.
+
+**Ajustes (nov/2026)**
+- **Análise PNR**: a linha "Tipo · Data · casos · em aberto" saiu do topo. O título agora é específico: com o filtro XPT ou SVC aparece, por exemplo, **Com penalidade XPT**; em "XPT + SVC" fica só **Com penalidade**.
+- **🎨 Status e cores** agora tem duas seções: **Status** e **Validadores** (cor por nome; aparece no seletor de validador, no histórico e numa bolinha no filtro de validador).
+- **Descrição por status**: cada status tem a caixinha **Descrição**. Marcada, o pacote com aquele status ganha o campo de texto para escrever o motivo, igual ao RECUSADA (ex.: REENVIAR PRINT). Ao criar um status novo há a opção **Adicionar descrição**. O texto sai na coluna MOTIVO RESCUSA do BAIXAR FORMS, como na recusa.

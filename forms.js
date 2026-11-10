@@ -343,7 +343,7 @@
   // qualquer status que aparecer na coluna STATUS DA EVIDÊNCIA vira aba + opção no seletor automaticamente,
   // e você pode trocar a cor (ou criar um status) em "🎨 Status e cores".
   const BUILTIN_ST = new Set(["PENDENTE", "RECUSADA", "ANEXADA", "ANULADA", "FATURADA", "NÃO SUBIR"]);
-  let stCfg = (() => { const c = store.get("forms_status_cfg", null) || {}; return { custom: Array.isArray(c.custom) ? c.custom : [], colors: c.colors && typeof c.colors === "object" ? c.colors : {} }; })();
+  let stCfg = (() => { const c = store.get("forms_status_cfg", null) || {}; return { custom: Array.isArray(c.custom) ? c.custom : [], colors: c.colors && typeof c.colors === "object" ? c.colors : {}, desc: c.desc && typeof c.desc === "object" ? c.desc : {}, valColors: c.valColors && typeof c.valColors === "object" ? c.valColors : {} }; })();
   const saveStCfg = () => store.set("forms_status_cfg", stCfg);
   let foundSt = [];
   const scanStatuses = () => {
@@ -371,6 +371,15 @@
     if (kind === "tab") return ` style="background:${mixHex(c, "#ffffff", .85)};border-color:${mixHex(c, "#ffffff", .35)};color:${mixHex(c, "#000000", .45)}"`;
     return ` style="background:${c};border-color:${c};color:${textOn(c)}"`;
   };
+
+  // descrição escrita (motivo): RECUSADA e EM ANÁLISE sempre têm; qualquer outro status ganha ao marcar "Descrição" em 🎨 Status e cores
+  const DESC_FIXED = new Set(["RECUSADA", "NÃO SUBIR"]);
+  const hasDesc = x => DESC_FIXED.has(x) || !!stCfg.desc[x];
+  const descLabel = x => x === "RECUSADA" ? "Motivo da recusa" : x === "NÃO SUBIR" ? "Motivo da análise" : "Descrição";
+  // cores dos validadores (as 4 primeiras são as do CSS original; a escolhida em 🎨 vale por cima)
+  const DEFAULT_VCOL = { KETHELLY: "#245b6b", EDUARDACARVALHO: "#6a45a8", VITORIA: "#7a3b0b", LUIZAFRANCA: "#fbd0d0" };
+  const valColor = n => stCfg.valColors[N(n)] || DEFAULT_VCOL[N(n)] || "";
+  const valStyle = n => { const c = stCfg.valColors[N(n)]; return c ? ` style="background:${c};border-color:${c};color:${textOn(c)}"` : ""; };
 
   // navegação entre as abas
   document.querySelectorAll("#nav button").forEach(b => b.onclick = () => {
@@ -617,7 +626,7 @@
     const extras = [...new Set(all.map(valOf))].filter(v => v !== SEM_VAL && !VALIDADORES.includes(v)).sort();
     const vnames = [...VALIDADORES, ...extras, SEM_VAL];
     $("#fVal").innerHTML = `<button data-v="TODOS" class="${!S.val.size ? "on" : ""}">Todos <i>${vbase.length}</i></button>` +
-      vnames.map(v => { const n = vbase.filter(c => valOf(c) === v).length; const on = S.val.has(v); return n || on || VALIDADORES.includes(v) ? `<button data-v="${esc(v)}" class="${on ? "on" : ""}">${on ? "✓ " : ""}${esc(v)} <i>${n}</i></button>` : ""; }).join("");
+      vnames.map(v => { const n = vbase.filter(c => valOf(c) === v).length; const on = S.val.has(v); return n || on || VALIDADORES.includes(v) ? `<button data-v="${esc(v)}" class="${on ? "on" : ""}">${on ? "✓ " : ""}${valColor(v) ? `<u class="vdot" style="background:${valColor(v)}"></u>` : ""}${esc(v)} <i>${n}</i></button>` : ""; }).join("");
     $("#fVal").querySelectorAll("button").forEach(b => b.onclick = () => {
       const v = b.dataset.v;
       if (v === "TODOS") S.val.clear(); else if (S.val.has(v)) S.val.delete(v); else S.val.add(v);
@@ -663,9 +672,9 @@
     const extra = c.status !== "PENDENTE" && !SEL.some(x => x[0] === c.status) ? `<option value="${esc(c.status)}" selected>${esc(c.status)}</option>` : "";
     const sel = `<select class="stsel" data-sel="${c.id}" data-s="${esc(c.status)}"${stStyle(c.status, "sel")} title="Marcar o status deste pacote">${orig === "PENDENTE" ? `<option value=""${c.status === "PENDENTE" ? " selected" : ""}>— A validar —</option>` : ""}${SEL.map(([v, t]) => `<option value="${v}"${c.status === v ? " selected" : ""}>${t}</option>`).join("")}${extra}</select>`;
     const vNow = L.validador || "", vExtra = vNow && !VALIDADORES.some(v => N(v) === N(vNow)) ? `<option value="${esc(vNow)}" selected>${esc(vNow)}</option>` : "";
-    const vsel = `<select class="valsel" data-val="${c.id}" data-v="${esc(N(vNow))}" title="Quem validou este pacote">${vNow ? "" : '<option value="" selected>— Validador —</option>'}${VALIDADORES.map(v => `<option value="${v}"${N(v) === N(vNow) ? " selected" : ""}>${v}</option>`).join("")}${vExtra}</select>`;
-    const mr = ["RECUSADA", "NÃO SUBIR"].includes(c.status) ? `<input class="mr" data-mr="${c.id}" placeholder="${c.status === "NÃO SUBIR" ? "Motivo da análise (escreva aqui)" : "Motivo da recusa (escreva aqui)"}" value="${esc(L.motRecusa)}">` : "";
-    const hist = `<div class="h hh">${c.recusas}× recusada neste ID · ${c.tent} envio${c.tent > 1 ? "s" : ""}</div>` + c.att.map((a, ix) => ({ a, ix })).reverse().map(({ a, ix }) => `<div class="h"><span>${fmtDT(a.ts)}</span><span>${esc(a.validador) || "—"}</span><span class="bd ${BADGE[a.status] || ""}"${stStyle(a.status, "badge")}>${esc(badge(a.status))}</span><span>${esc(prettyMotivo(a.motivo)) || "—"}</span>${a.urls.length ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(a.urls[0])}" title="Abrir a foto desse envio">📷</a>` : ""}${a.motRecusa ? `<em>Motivo da recusa: ${esc(a.motRecusa)}</em>` : ""}</div>`).join("");
+    const vsel = `<select class="valsel" data-val="${c.id}" data-v="${esc(N(vNow))}"${valStyle(vNow)} title="Quem validou este pacote">${vNow ? "" : '<option value="" selected>— Validador —</option>'}${VALIDADORES.map(v => `<option value="${v}"${N(v) === N(vNow) ? " selected" : ""}>${v}</option>`).join("")}${vExtra}</select>`;
+    const mr = hasDesc(c.status) ? `<input class="mr" data-mr="${c.id}" placeholder="${descLabel(c.status)} (escreva aqui)" value="${esc(L.motRecusa)}">` : "";
+    const hist = `<div class="h hh">${c.recusas}× recusada neste ID · ${c.tent} envio${c.tent > 1 ? "s" : ""}</div>` + c.att.map((a, ix) => ({ a, ix })).reverse().map(({ a, ix }) => `<div class="h"><span>${fmtDT(a.ts)}</span>${a.validador && valStyle(a.validador) ? `<span class="bd"${valStyle(a.validador)}>${esc(a.validador)}</span>` : `<span>${esc(a.validador) || "—"}</span>`}<span class="bd ${BADGE[a.status] || ""}"${stStyle(a.status, "badge")}>${esc(badge(a.status))}</span><span>${esc(prettyMotivo(a.motivo)) || "—"}</span>${a.urls.length ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(a.urls[0])}" title="Abrir a foto desse envio">📷</a>` : ""}${a.motRecusa ? `<em>${descLabel(a.status)}: ${esc(a.motRecusa)}</em>` : ""}</div>`).join("");
     return `<div class="fr${c.recusas >= 2 ? " hot" : ""}${L.edited ? " ed" : ""}${c.id === tratando ? " trat" : ""}${selectedIds.has(c.id) ? " selected" : ""}" data-id="${c.id}">
   <div class="c1"><b class="idv">${c.id}</b><button class="mini" data-cp="${c.id}" title="Copiar ID">⧉</button><button class="mini remove-id" data-remove="${c.id}" title="Ocultar este ID: some da lista e não entra na cópia nem no BAIXAR FORMS">✕</button><div class="mu">${c.code ? esc(c.code) + " · " : ""}${esc(c.regiao)}${c.lote ? " · enviado em lote" : ""}</div>${L.focal ? `<div class="mu focal">Focal: ${esc(L.focal)}</div>` : ""}<button class="mini cpall" data-cpall="${c.id}" title="Copiar mensagem completa">⧉ Copiar mensagem ID, base e focal</button></div>
   <div class="c2">${sel} ${rec}${L.edited ? ' <span class="edtag">✎ editado</span>' : ""}<div class="vrow">${vsel}</div><div class="mu">${c.tent} envio${c.tent > 1 ? "s" : ""} · último ${fmtDT(L.ts)}</div></div>
@@ -812,7 +821,7 @@
     } else {
       if (el.value === "" || normStatus(el.value) === orig) { delete ed.s; delete ed.os; }
       else { ed.s = el.value; ed.os = orig; }
-      if (!["RECUSADA", "NÃO SUBIR"].includes(ed.s ? normStatus(ed.s) : orig)) { delete ed.m; delete ed.om; }
+      if (!hasDesc(ed.s ? normStatus(ed.s) : orig)) { delete ed.m; delete ed.om; }
     }
     keepEdit(c, ed); reanalyze();
     // troca só essa linha (ela continua na lista até você mudar o filtro) e atualiza os contadores
@@ -854,9 +863,15 @@
     const list = [["PENDENTE", "A VALIDAR", 0], ["RECUSADA", "RECUSADA", 0], ["ANEXADA", "ANEXADA", 0], ["ANULADA", "ANULADA", 0], ["FATURADA", "FATURADA", 0], ["NÃO SUBIR", "EM ANALISE", 0], ...extraStatuses().map(x => [x, x, 1])];
     const rows = list.map(([k, t, ex]) => {
       const c = stColor(k), nCases = A ? A.cases.filter(z => z.status === k).length : 0;
-      return `<div class="frow"><span class="bd" style="background:${c};color:${textOn(c)};min-width:120px;text-align:center">${esc(t)}</span><input type="color" data-stc="${esc(k)}" value="${c}" title="Escolher a cor"><span class="mu">${ex ? (stCfg.custom.includes(k) ? "criado aqui" : "veio no arquivo") : "padrão"} · ${nCases} pacote${nCases === 1 ? "" : "s"}</span>${ex && stCfg.custom.includes(k) ? `<button type="button" class="mini" data-stdel="${esc(k)}" title="Remover este status criado aqui">✕</button>` : ""}</div>`;
+      const fixo = DESC_FIXED.has(k);
+      return `<div class="frow"><span class="bd" style="background:${c};color:${textOn(c)};min-width:120px;text-align:center">${esc(t)}</span><input type="color" data-stc="${esc(k)}" value="${c}" title="Escolher a cor"><label class="chk" title="${fixo ? "Este status já tem campo para escrever o motivo" : "Mostra um campo para escrever a descrição neste status"}"><input type="checkbox" data-stdesc="${esc(k)}"${hasDesc(k) ? " checked" : ""}${fixo ? " disabled" : ""}> Descrição</label><span class="mu">${ex ? (stCfg.custom.includes(k) ? "criado aqui" : "veio no arquivo") : "padrão"} · ${nCases} pacote${nCases === 1 ? "" : "s"}</span>${ex && stCfg.custom.includes(k) ? `<button type="button" class="mini" data-stdel="${esc(k)}" title="Remover este status criado aqui">✕</button>` : ""}</div>`;
     }).join("");
-    return `<div class="dbox"><h2>🎨 Status e cores</h2><p class="mu">Qualquer status novo que aparecer na coluna <b>STATUS DA EVIDÊNCIA</b> do arquivo já entra sozinho (aba, seletor e cor). O arquivo baixado do Forms não leva a cor dos chips, por isso a cor se escolhe aqui e fica salva neste navegador.</p>${rows}<div class="frow"><input id="stNew" type="text" maxlength="40" placeholder="Novo status (ex.: EM REVISÃO)"><input id="stNewC" type="color" value="#6b7a99"><button id="stAdd" class="pri" type="button">＋ Adicionar</button></div><div class="frow"><button id="stReset" type="button">Restaurar cores padrão</button><button id="stClose" type="button">Fechar ✕</button></div></div>`;
+    const vnames = [...new Set([...VALIDADORES, ...(A ? A.cases.map(valOf) : [])])].filter(v => v !== SEM_VAL);
+    const vrows = vnames.map(v => {
+      const c = valColor(v) || "#6b7a99", n = A ? A.cases.filter(z => valOf(z) === v).length : 0;
+      return `<div class="frow"><span class="bd" style="background:${c};color:${textOn(c)};min-width:120px;text-align:center">${esc(v)}</span><input type="color" data-vc="${esc(N(v))}" value="${c}" title="Escolher a cor deste validador"><span class="mu">${VALIDADORES.includes(v) ? "lista fixa" : "veio no arquivo"} · ${n} pacote${n === 1 ? "" : "s"}</span></div>`;
+    }).join("");
+    return `<div class="dbox"><h2>🎨 Status e cores</h2><p class="mu">Qualquer status novo que aparecer na coluna <b>STATUS DA EVIDÊNCIA</b> do arquivo já entra sozinho (aba, seletor e cor). O arquivo baixado do Forms não leva a cor dos chips, por isso a cor se escolhe aqui e fica salva neste navegador. Marque <b>Descrição</b> num status para ele ter o campo de motivo por escrito, igual ao RECUSADA.</p><h3 class="stsec">Status</h3>${rows}<div class="frow"><input id="stNew" type="text" maxlength="40" placeholder="Novo status (ex.: REENVIAR PRINT)"><input id="stNewC" type="color" value="#6b7a99"><label class="chk"><input id="stNewD" type="checkbox"> Adicionar descrição</label><button id="stAdd" class="pri" type="button">＋ Adicionar</button></div><h3 class="stsec">Validadores</h3>${vrows}<div class="frow"><button id="stReset" type="button">Restaurar cores padrão</button><button id="stClose" type="button">Fechar ✕</button></div></div>`;
   }
   function openStCfg() {
     let ov = $("#stcfg");
@@ -867,8 +882,8 @@
       ov.addEventListener("click", e => {
         if (e.target === ov || e.target.id === "stClose") { ov.hidden = true; return; }
         const del = e.target.closest("[data-stdel]");
-        if (del) { const k = del.dataset.stdel; stCfg.custom = stCfg.custom.filter(x => x !== k); delete stCfg.colors[k]; apply(); return; }
-        if (e.target.id === "stReset") { stCfg.colors = {}; apply(); return; }
+        if (del) { const k = del.dataset.stdel; stCfg.custom = stCfg.custom.filter(x => x !== k); delete stCfg.colors[k]; delete stCfg.desc[k]; apply(); return; }
+        if (e.target.id === "stReset") { stCfg.colors = {}; stCfg.valColors = {}; apply(); return; }
         if (e.target.id === "stAdd") {
           const raw = ($("#stNew").value || "").trim();
           if (!raw) { toast("Digite o nome do novo status."); return; }
@@ -876,10 +891,15 @@
           if (BUILTIN_ST.has(nome)) { toast("Esse status já existe na lista padrão."); return; }
           if (!stCfg.custom.includes(nome)) stCfg.custom.push(nome);
           stCfg.colors[nome] = $("#stNewC").value;
+          if ($("#stNewD").checked) stCfg.desc[nome] = true; else delete stCfg.desc[nome];
           apply(); toast(`Status “${nome}” adicionado. Ele já aparece na aba e no seletor de cada pacote.`);
         }
       });
-      ov.addEventListener("change", e => { const i = e.target.closest("[data-stc]"); if (i) { stCfg.colors[i.dataset.stc] = i.value; apply(); } });
+      ov.addEventListener("change", e => {
+        const i = e.target.closest("[data-stc]"); if (i) { stCfg.colors[i.dataset.stc] = i.value; apply(); return; }
+        const d = e.target.closest("[data-stdesc]"); if (d) { if (d.checked) stCfg.desc[d.dataset.stdesc] = true; else delete stCfg.desc[d.dataset.stdesc]; apply(); return; }
+        const v = e.target.closest("[data-vc]"); if (v) { stCfg.valColors[v.dataset.vc] = v.value; apply(); }
+      });
     }
     refill(); ov.hidden = false;
   }

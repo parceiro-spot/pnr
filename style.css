@@ -218,3 +218,7 @@ body.dates-hidden .date-field,body.dates-hidden .date-context{color:#7b8581!impo
 .date-hide-btn.on{background:#c8cfcc;color:#26322f;border-color:#98a39f;font-weight:800}
 .date-chart{transition:opacity .15s}
 .date-chart.is-hidden .chart-head h3,.date-chart.is-hidden>p,.date-chart.is-hidden .cv{opacity:.35}
+
+.vdot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle;border:1px solid rgba(0,0,0,.25)}
+.chk{display:inline-flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;white-space:nowrap}
+.stsec{margin:14px 0 4px;font-size:13px;text-transform:uppercase;letter-spacing:.04em}

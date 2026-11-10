@@ -238,7 +238,7 @@ function render() {
   const list = rows.filter(r => byTipo(r) && (data === "TUDO" || r.data === data)).map(r => ({...r, base: displayBase(r)}));
   const tot = list.reduce((t, r) => t + r.valor, 0);
   const P = $("#panel");
-  P.innerHTML = `<h2 class="ttl">${cur}</h2><p class="tsub date-context">Tipo: ${tipo === "TODOS" ? "XPT + SVC" : tipo} · Data: ${data === "TUDO" ? "(Tudo)" : ddmm(data)} · ${list.length} casos · ${brl(tot)} em aberto</p>
+  P.innerHTML = `<h2 class="ttl">${cur}${tipo === "TODOS" ? "" : " " + tipo}</h2>
   <div class="tabs">
    <div class="card"><h3>BASES × QUANTIDADE</h3><p>Número de casos por base. Vermelho = mais casos. Clique numa base para ver o detalhe.</p><table class="xl" id="t1"></table></div>
    <div class="card"><h3>BASE × VALOR EM ABERTO</h3><p>Soma do valor das PNR por base. Vermelho = maior valor. Clique numa base para ver o detalhe.</p><table class="xl" id="t2"></table></div>
