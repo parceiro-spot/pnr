@@ -509,15 +509,20 @@
   wire("#fd1", "#ff1", "#fs1", async f => {
     await ready;
     const incoming = await readForms(f);
+    ingest(incoming, f.name);
+  });
+  // junta as linhas lidas (arquivo ou link ao vivo) com as já salvas e atualiza a tela
+  function ingest(incoming, nome) {
     if (lastHeader && lastHeader.length) { formsHeader = lastHeader.slice(); idb.set("forms_header", formsHeader).catch(() => { }); }
     const idsDe = rs => { rs = Array.isArray(rs) ? rs : []; const k = Core.colMap(rs).id; return rs.flatMap(r => k ? extractIds(r[k]) : []); };
     const idsAntes = new Set(idsDe(forms));
     const r = mergeForms(incoming);
     const idsNovos = new Set(idsDe(r.rows).filter(id => !idsAntes.has(id)));
-    $("#fs1").textContent = `${f.name} · ${incoming.length.toLocaleString("pt-BR")} linhas lidas · ${r.rows.length.toLocaleString("pt-BR")} salvas` +
+    $("#fs1").textContent = `${nome} · ${incoming.length.toLocaleString("pt-BR")} linhas lidas · ${r.rows.length.toLocaleString("pt-BR")} salvas` +
       (r.added || r.updated ? ` · +${r.added.toLocaleString("pt-BR")} respostas novas${r.updated ? ` · ${r.updated.toLocaleString("pt-BR")} atualizadas` : ""} · ${idsNovos.size.toLocaleString("pt-BR")} IDs novos` : " · nenhuma resposta nova neste arquivo (já estava salvo)");
     analyzeNow();
-  });
+    return { r, idsNovos };
+  }
   function analyzeNow() {
     if (!forms) { $("#finfo").textContent = "Suba o Forms para começar."; return; }
     const firstLoad = !A;
@@ -558,6 +563,56 @@
       try { analyzeNow(); } catch (e) { console.error("Falha ao abrir o Forms salvo:", e); $("#finfo").textContent = "Não consegui abrir o Forms salvo (" + (e && e.message || e) + "). Anexe o arquivo de novo."; }
     }
   })().catch(e => console.error(e));
+  // ---------- Forms ao vivo (planilha publicada como CSV) ----------
+  // Busca o CSV publicado a cada 30 s e junta só o que é novo, sem baixar/subir arquivo. O Google atualiza o CSV
+  // publicado com alguns minutos de atraso, então não é instantâneo. Só LÊ: as marcações feitas aqui não voltam para a planilha.
+  const LIVE_DEFAULT = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTTWvTn2sD17nnzOHancBZWx9Thu80bIBUp_EeWMOxKQEiuMdKkDfqiGy63UCun_YzF_MpGKw5T4aiY/pub?output=csv";
+  const LIVE_MS = 30000;
+  let live = (() => { const c = store.get("forms_live", null) || {}; return { url: typeof c.url === "string" && c.url ? c.url : LIVE_DEFAULT, on: c.on !== false }; })();
+  let liveTimer = null, liveBusy = false;
+  const saveLive = () => store.set("forms_live", live);
+  const hhmm = () => new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  function liveMsg(t, bad) { const el = $("#fLiveSt"); if (el) { el.textContent = t; el.style.color = bad ? "#b3261e" : ""; } }
+  async function liveSync(manual) {
+    if (liveBusy || !live.url) return;
+    // não troca a lista debaixo de quem está escrevendo/escolhendo numa linha
+    const ae = document.activeElement;
+    if (!manual && ae && ae.closest && ae.closest("#fList") && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) return;
+    liveBusy = true;
+    try {
+      await ready;
+      const u = live.url + (live.url.includes("?") ? "&" : "?") + "_=" + Date.now();
+      const resp = await fetch(u, { cache: "no-store" });
+      if (!resp.ok) throw new Error("o Google respondeu " + resp.status);
+      const text = await resp.text();
+      if (/^\s*<(!doctype|html)/i.test(text)) throw new Error("o link não devolveu um CSV (confira se está publicado como CSV)");
+      const pr = Papa.parse(text, { header: true, skipEmptyLines: true });
+      lastHeader = (pr.meta && pr.meta.fields) || Object.keys(pr.data[0] || {});
+      if (!pr.data.length) throw new Error("o CSV veio vazio");
+      const before = forms ? forms.length : 0;
+      const { r, idsNovos } = ingest(pr.data, "Forms ao vivo");
+      if (r.added || r.updated || !before) {
+        liveMsg(`✓ ${hhmm()} · +${r.added} novas · ${r.updated} atualizadas`);
+        if (r.added) toast(`Forms ao vivo: +${r.added} resposta${r.added > 1 ? "s" : ""} nova${r.added > 1 ? "s" : ""} (${idsNovos.size} ID${idsNovos.size === 1 ? "" : "s"} novo${idsNovos.size === 1 ? "" : "s"}).`);
+      } else liveMsg(`✓ ${hhmm()} · sem novidades`);
+    } catch (e) {
+      console.error(e);
+      liveMsg(`✕ ${hhmm()} · não consegui buscar (${e && e.message || e}). Tento de novo em 30 s.`, true);
+    } finally { liveBusy = false; }
+  }
+  function liveApply() {
+    clearInterval(liveTimer); liveTimer = null;
+    const b = $("#fLiveBtn"); if (b) { b.textContent = live.on ? "⏸ Desligar ao vivo" : "▶ Ligar ao vivo"; b.classList.toggle("pri", live.on); }
+    if (live.on) { liveTimer = setInterval(() => liveSync(false), LIVE_MS); liveSync(true); } else liveMsg("Desligado. O Forms continua como estava; anexe um arquivo ou ligue de novo.");
+  }
+  if ($("#fLiveUrl")) {
+    $("#fLiveUrl").value = live.url;
+    $("#fLiveUrl").onchange = e => { live.url = e.target.value.trim(); saveLive(); if (live.on) liveSync(true); };
+    $("#fLiveBtn").onclick = () => { live.on = !live.on; saveLive(); liveApply(); };
+    $("#fLiveNow").onclick = () => liveSync(true);
+    liveApply();
+  }
+
   function reanalyze() {
     A = analyze(forms, edits);
     store.set("forms_edits", edits);
