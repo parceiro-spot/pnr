@@ -144,7 +144,7 @@
     rows = Array.isArray(rows) ? rows : [];
     const C = colMap(rows), g = (r, k) => (k ? r[k] : "");
     detectTsOrder(rows, C.ts);
-    const items = [], invalid = [];
+    const items = [], invalid = [], semCount = new Map();
     rows.forEach((r, i) => {
       const idRaw = String(g(r, C.id) ?? "").trim(), ts = parseTs(g(r, C.ts));
       if (!idRaw && !ts) return; // linha vazia no fim da planilha
@@ -159,7 +159,13 @@
       const before = it.ids.length;
       it.ids = it.ids.filter(id => !excludedIds.has(id));
       if (!it.ids.length && before) return; // ID válido, mas removido de propósito (✕)
-      if (!it.ids.length) { invalid.push(it); return; } // sem ID, ou ID digitado errado (truncado, 12 dígitos, nome…)
+      if (!it.ids.length) {
+        // sem ID de 11 dígitos (vazio, truncado, 12 dígitos, nome no lugar…): entra na lista mesmo assim,
+        // como um pacote só dessa resposta (não dá para juntar com outros envios sem um ID de verdade)
+        const base = "SEMID-" + (it.ts ? it.ts.getTime() : "L" + i), n = semCount.get(base) || 0;
+        semCount.set(base, n + 1);
+        it.ids = [n ? `${base}-${n + 1}` : base]; it.semId = true; it.idShow = idRaw || "SEM ID";
+      }
       items.push(it);
     });
     // Status fora da lista padrão (novos, digitados na planilha): "Em revisão", "EM REVISAO " e "em revisão" são o mesmo status.
@@ -177,8 +183,7 @@
       by.get(id).push(it);
     }
     const cases = [];
-    for (const [id, att] of by) {
-      att.sort((a, b) => ((a.ts?.getTime() || 0) - (b.ts?.getTime() || 0)) || a.i - b.i);
+    const buildCase = (id, att, realId) => {
       let last = att[att.length - 1];
       // O Forms prevalece sobre edições locais se o campo mudou desde o snapshot salvo.
       const ed = edits && edits[id];
@@ -201,10 +206,18 @@
       for (let k = att.length - 1; k >= 0 && !code; k--) code = att[k].codes[0] || "";
       const recusas = att.filter(a => a.status === "RECUSADA").length;
       cases.push({
-        id, att, last, status: last.status, recusas, tent: att.length, code,
+        id, att, last, status: last.status, recusas, tent: att.length, code, semId: !!last.semId, idShow: last.semId ? last.idShow : "",
         regiao: code ? regionOf(code) : SEM_REG, dia: dayKey(last.ts), lote: att.some(a => a.ids.length > 1),
-        recusaMotivos: att.filter(a => a.status === "RECUSADA" && a.motRecusa).map(a => a.motRecusa)
+        recusaMotivos: att.filter(a => a.status === "RECUSADA" && a.motRecusa).map(a => a.motRecusa),
+        extra: !!realId, realId: realId || ""
       });
+    };
+    for (const [id, att] of by) {
+      att.sort((a, b) => ((a.ts?.getTime() || 0) - (b.ts?.getTime() || 0)) || a.i - b.i);
+      // Envios ANTERIORES do mesmo ID que continuam sem status (linha vazia na planilha) também são "A validar":
+      // cada um vira uma linha própria na lista (a foto do momento daquele envio), além do pacote com o envio atual.
+      for (let k = 0; k < att.length - 1; k++) if (att[k].status === "PENDENTE" && !att[k].semId) buildCase(`${id}~${att[k].i}`, att.slice(0, k + 1), id);
+      buildCase(id, att, "");
     }
     return { cases, invalid, rowsTotal: items.length + invalid.length, cols: C };
   }
@@ -223,7 +236,7 @@
       if (l.motOut !== undefined && C.recusa) row[C.recusa] = l.motOut;
       if (l.valOut !== undefined && C.validador) row[C.validador] = l.valOut;
       changes.push({
-        "Carimbo de data/hora": C.ts ? rows[l.i][C.ts] : "", "ID": c.id, "BASE": C.base ? row[C.base] : "",
+        "Carimbo de data/hora": C.ts ? rows[l.i][C.ts] : "", "ID": c.realId || (c.semId ? c.idShow : c.id), "BASE": C.base ? row[C.base] : "",
         "VALIDADOR": C.validador ? row[C.validador] : "", "STATUS DA EVIDÊNCIA": C.status ? row[C.status] : "", "MOTIVO RESCUSA": C.recusa ? row[C.recusa] : ""
       });
     }
@@ -568,8 +581,49 @@
   // publicado com alguns minutos de atraso, então não é instantâneo. Só LÊ: as marcações feitas aqui não voltam para a planilha.
   const LIVE_DEFAULT = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTTWvTn2sD17nnzOHancBZWx9Thu80bIBUp_EeWMOxKQEiuMdKkDfqiGy63UCun_YzF_MpGKw5T4aiY/pub?output=csv";
   const LIVE_MS = 30000;
-  let live = (() => { const c = store.get("forms_live", null) || {}; return { url: typeof c.url === "string" && c.url ? c.url : LIVE_DEFAULT, on: c.on !== false }; })();
-  let liveTimer = null, liveBusy = false;
+  let live = (() => { const c = store.get("forms_live", null) || {}; return { url: typeof c.url === "string" && c.url ? c.url : LIVE_DEFAULT, on: c.on !== false, all: c.all !== false }; })();
+  let liveTimer = null, liveBusy = false, liveLast = 0, liveHeavy = false;
+  const xlsxFail = new Map(); // chave da planilha -> motivo (não tenta de novo nesta sessão)
+  const liveKey = u => { const m = /\/spreadsheets\/d\/e\/([\w-]+)\/pub/.exec(u); return m ? m[1] : ""; };
+  const noCache = u => u + (u.includes("?") ? "&" : "?") + "_=" + Date.now();
+  // baixa o .xlsx/.ods publicado (TODAS as abas, como o arquivo anexado) e lê com o mesmo leitor do anexo
+  async function fetchBook(url, ext) {
+    const resp = await fetch(noCache(url), { cache: "no-store" });
+    if (!resp.ok) throw new Error("o Google respondeu " + resp.status);
+    const buf = await resp.arrayBuffer(), b = new Uint8Array(buf.slice(0, 2));
+    if (!(b[0] === 0x50 && b[1] === 0x4B)) throw new Error("o link não devolveu uma planilha"); // .xlsx/.ods são ZIP ("PK")
+    return readForms({ name: "forms-ao-vivo." + ext, arrayBuffer: async () => buf });
+  }
+  async function fetchCsv(url) {
+    const resp = await fetch(noCache(url), { cache: "no-store" });
+    if (!resp.ok) throw new Error("o Google respondeu " + resp.status);
+    const text = await resp.text();
+    if (/^\s*<(!doctype|html)/i.test(text)) throw new Error("o link não devolveu um CSV (confira se está publicado como CSV)");
+    const pr = Papa.parse(text, { header: true, skipEmptyLines: true });
+    lastHeader = (pr.meta && pr.meta.fields) || Object.keys(pr.data[0] || {});
+    if (!pr.data.length) throw new Error("o CSV não tem respostas, só as colunas: " + lastHeader.slice(0, 4).join(", ") + (lastHeader.length > 4 ? "…" : "") + ". Provavelmente é a aba errada: publique a aba das respostas (com ID e VALIDADOR) e cole o novo link");
+    if (!Core.colMap(pr.data).id) throw new Error("não achei a coluna ID nesse CSV (colunas: " + lastHeader.slice(0, 4).join(", ") + "…). Publique a aba certa das respostas");
+    return pr.data;
+  }
+  // lê todos os links do campo (separados por espaço, vírgula ou ;). Para link de planilha publicada, tenta primeiro
+  // o .xlsx do documento inteiro (todas as abas); se o Google não liberar, cai no CSV (só a aba do link).
+  async function liveFetchAll() {
+    const urls = live.url.split(/[\s;,]+/).filter(u => /^https?:/i.test(u));
+    if (!urls.length) throw new Error("cole o link da planilha publicada");
+    const out = []; const done = new Set(); let src = [];
+    for (const u of urls) {
+      const key = liveKey(u), bin = /output=(xlsx|ods)/i.exec(u);
+      if (bin) { out.push(...await fetchBook(u, bin[1].toLowerCase())); src.push("todas as abas (" + bin[1].toLowerCase() + ")"); continue; }
+      if (key && live.all && !xlsxFail.has(key)) {
+        if (done.has(key)) continue;
+        try { out.push(...await fetchBook(`https://docs.google.com/spreadsheets/d/e/${key}/pub?output=xlsx`, "xlsx")); done.add(key); src.push("todas as abas (xlsx)"); continue; }
+        catch (e) { console.warn("xlsx do documento inteiro indisponível:", e); xlsxFail.set(key, String(e && e.message || e)); }
+      }
+      out.push(...await fetchCsv(u)); src.push(key && live.all ? "só a aba do link (CSV; o Google não liberou todas as abas)" : "CSV (só a aba do link)");
+    }
+    liveHeavy = src.some(x => /xlsx|ods/.test(x));
+    return { rows: out, src: [...new Set(src)].join(" + ") };
+  }
   const saveLive = () => store.set("forms_live", live);
   const hhmm = () => new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   function liveMsg(t, bad) { const el = $("#fLiveSt"); if (el) { el.textContent = t; el.style.color = bad ? "#b3261e" : ""; } }
@@ -581,20 +635,19 @@
     liveBusy = true;
     try {
       await ready;
-      const u = live.url + (live.url.includes("?") ? "&" : "?") + "_=" + Date.now();
-      const resp = await fetch(u, { cache: "no-store" });
-      if (!resp.ok) throw new Error("o Google respondeu " + resp.status);
-      const text = await resp.text();
-      if (/^\s*<(!doctype|html)/i.test(text)) throw new Error("o link não devolveu um CSV (confira se está publicado como CSV)");
-      const pr = Papa.parse(text, { header: true, skipEmptyLines: true });
-      lastHeader = (pr.meta && pr.meta.fields) || Object.keys(pr.data[0] || {});
-      if (!pr.data.length) throw new Error("o CSV veio vazio");
+      if (!manual && liveHeavy && Date.now() - liveLast < 55000) return; // planilha completa é mais pesada: no máximo 1x por minuto
+      liveLast = Date.now();
+      const got = await liveFetchAll();
+      const pr = { data: got.rows };
       const before = forms ? forms.length : 0;
       const { r, idsNovos } = ingest(pr.data, "Forms ao vivo");
+      // diagnóstico: quantas linhas o CSV trouxe, quantas foram descartadas por ID inválido e qual é a resposta mais recente
+      const ult = A && A.cases.length ? A.cases.reduce((m, c) => ((c.last.ts ? c.last.ts.getTime() : 0) > (m.last.ts ? m.last.ts.getTime() : 0) ? c : m)) : null;
+      const diag = ` · fonte: ${got.src} · ${pr.data.length} linhas${A && A.invalid.length ? ` (${A.invalid.length} sem ID válido)` : ""}${ult ? ` · última: ${fmtDT(ult.last.ts)} ID ${ult.id}` : ""}`;
       if (r.added || r.updated || !before) {
-        liveMsg(`✓ ${hhmm()} · +${r.added} novas · ${r.updated} atualizadas`);
+        liveMsg(`✓ ${hhmm()} · +${r.added} novas · ${r.updated} atualizadas${diag}`);
         if (r.added) toast(`Forms ao vivo: +${r.added} resposta${r.added > 1 ? "s" : ""} nova${r.added > 1 ? "s" : ""} (${idsNovos.size} ID${idsNovos.size === 1 ? "" : "s"} novo${idsNovos.size === 1 ? "" : "s"}).`);
-      } else liveMsg(`✓ ${hhmm()} · sem novidades`);
+      } else liveMsg(`✓ ${hhmm()} · sem novidades${diag}`);
     } catch (e) {
       console.error(e);
       liveMsg(`✕ ${hhmm()} · não consegui buscar (${e && e.message || e}). Tento de novo em 30 s.`, true);
@@ -608,6 +661,8 @@
   if ($("#fLiveUrl")) {
     $("#fLiveUrl").value = live.url;
     $("#fLiveUrl").onchange = e => { live.url = e.target.value.trim(); saveLive(); if (live.on) liveSync(true); };
+    $("#fLiveAll").checked = live.all;
+    $("#fLiveAll").onchange = e => { live.all = e.target.checked; xlsxFail.clear(); saveLive(); if (live.on) liveSync(true); };
     $("#fLiveBtn").onclick = () => { live.on = !live.on; saveLive(); liveApply(); };
     $("#fLiveNow").onclick = () => liveSync(true);
     liveApply();
@@ -631,36 +686,43 @@
     if (!S.q && skip !== "st" && S.st !== "TODOS" && c.status !== S.st) return false;
     if (skip !== "reg" && S.reg.size && !S.reg.has(c.regiao)) return false;
     if (skip !== "val" && S.val.size && !S.val.has(valOf(c))) return false;
-    if (S.dt !== "TUDO" && c.dia !== S.dt) return false;
+    // na aba "A validar" entram os pendentes de TODOS os dias: o que ainda não foi validado não some ao trocar/abrir em outra data
+    if (S.dt !== "TUDO" && c.dia !== S.dt && !(S.st === "PENDENTE" && c.status === "PENDENTE")) return false;
     if (S.q) {
-      const q = N(S.q), hay = N([c.id, c.code, c.regiao, c.status, c.last.motorista, c.last.focal, c.last.motivo, c.last.motRecusa, c.last.validador, ...c.recusaMotivos].join(" "));
+      const q = N(S.q), hay = N([c.id, c.idShow, c.code, c.regiao, c.status, c.last.motorista, c.last.focal, c.last.motivo, c.last.motRecusa, c.last.validador, ...c.recusaMotivos].join(" "));
       if (!hay.includes(q)) return false;
     }
     return true;
   };
   const sorters = {
-    rec: (a, b) => b.recusas - a.recusas || (a.last.ts || 0) - (b.last.ts || 0),
-    old: (a, b) => (a.last.ts || 0) - (b.last.ts || 0),
-    new: (a, b) => (b.last.ts || 0) - (a.last.ts || 0),
-    base: (a, b) => (a.code || "~").localeCompare(b.code || "~", "pt-BR", { numeric: true }) || (a.last.ts || 0) - (b.last.ts || 0)
+    rec: (a, b) => b.recusas - a.recusas || (a.last.ts || 0) - (b.last.ts || 0) || a.last.i - b.last.i,
+    old: (a, b) => (a.last.ts || 0) - (b.last.ts || 0) || a.last.i - b.last.i, // ordem da planilha do Forms
+    new: (a, b) => (b.last.ts || 0) - (a.last.ts || 0) || b.last.i - a.last.i,
+    base: (a, b) => (a.code || "~").localeCompare(b.code || "~", "pt-BR", { numeric: true }) || (a.last.ts || 0) - (b.last.ts || 0) || a.last.i - b.last.i
   };
 
-  const currentList = () => A.cases.filter(c => matches(c)).sort(sorters[S.sort]);
+  // na aba Recusadas a lista vem do mais recente para o mais antigo (data/hora do último envio)
+  // "Todas" fica na ordem da tabela do Forms (mais antigo → mais novo); a cópia para o Forms sempre sai nessa ordem, qualquer que seja a aba
+  const sorterNow = () => S.st === "RECUSADA" ? sorters.new : S.st === "TODOS" ? sorters.old : sorters[S.sort];
+  const idTxt = c => c.realId || (c.semId ? c.idShow : c.id);
+  const currentList = () => A.cases.filter(c => matches(c)).sort(sorterNow());
   function render() { if (!statusTabs().some(t => t[0] === S.st)) S.st = "TODOS"; const list = currentList(); renderTop(list); renderList(list); }
   function renderTop(list) {
     // Os números dos cartões e dos filtros acompanham a data selecionada.
-    const all = (S.dt === "TUDO" ? A.cases : A.cases.filter(c => c.dia === S.dt)).filter(c => !isHiddenCase(c)), reg = S.reg;
+    const allDay = (S.dt === "TUDO" ? A.cases : A.cases.filter(c => c.dia === S.dt)).filter(c => !isHiddenCase(c)), reg = S.reg;
+    const pendAll = A.cases.filter(c => c.status === "PENDENTE" && !isHiddenCase(c)); // pendentes de todos os dias
+    const all = S.st === "PENDENTE" ? [...new Map([...allDay, ...pendAll].map(c => [c.id, c])).values()] : allDay;
     const nHid = A.cases.filter(isHiddenCase).length, ub = $("#fUnhide");
     if (ub) { ub.hidden = !nHid; ub.textContent = `👁 Mostrar ocultos (${nHid})`; }
     const valOk = c => !S.val.size || S.val.has(valOf(c));
     const inReg = all.filter(c => (!reg.size || reg.has(c.regiao)) && valOk(c));
     const cnt = (fn, l = inReg) => l.filter(fn).length;
-    const responseCount = S.dt === "TUDO" ? A.rowsTotal : all.reduce((n, c) => n + c.att.filter(a => dayKey(a.ts) === S.dt).length, 0);
+    const responseCount = S.dt === "TUDO" ? A.rowsTotal : all.filter(c => !c.extra).reduce((n, c) => n + c.att.filter(a => dayKey(a.ts) === S.dt).length, 0);
     $("#fkpi").innerHTML = [
-      ["IDs únicos", inReg.length, `${responseCount.toLocaleString("pt-BR")} respostas no Forms`],
-      ["A validar", cnt(c => c.status === "PENDENTE"), "último envio sem status"],
+      ["IDs únicos", inReg.filter(c => !c.extra).length, `${responseCount.toLocaleString("pt-BR")} respostas no Forms`],
+      ["A validar", pendAll.filter(c => (!reg.size || reg.has(c.regiao)) && valOk(c)).length, "sem status (todos os dias)"],
       ["Recusadas", cnt(c => c.status === "RECUSADA"), "última resposta = recusada"],
-      ["Reincidentes", cnt(c => c.recusas >= 2), "recusados 2× ou mais"],
+      ["Reincidentes", cnt(c => c.recusas >= 2 && !c.extra), "recusados 2× ou mais"],
       ["Alterados por você", all.filter(c => c.last.edited).length, "entram no BAIXAR FORMS"]
     ].map(([t, v, s]) => `<div class="k"><small>${t}</small><div>${v.toLocaleString("pt-BR")}</div><em>${s}</em></div>`).join("");
 
@@ -689,13 +751,13 @@
     });
 
     $("#fSt").innerHTML = statusTabs().map(([k, t]) => {
-      const n = all.filter(c => (!S.reg.size || S.reg.has(c.regiao)) && valOk(c) && (k === "TODOS" || c.status === k)).length;
+      const n = (k === "PENDENTE" ? pendAll : allDay).filter(c => (!S.reg.size || S.reg.has(c.regiao)) && valOk(c) && (k === "TODOS" || c.status === k)).length;
       const on = S.st === k;
       return `<button data-s="${esc(k)}" class="${on ? "on" : ""}"${stStyle(k, on ? "tabOn" : "tab")}>${esc(t)} <i>${n}</i></button>`;
     }).join("");
     $("#fSt").querySelectorAll("button").forEach(b => b.onclick = () => { S.st = b.dataset.s; S.limit = 100; OPEN.fSt = false; render(); });
     // botões minimizados: mostram só a escolha atual; clicando abre as opções
-    const nSt = all.filter(c => (!S.reg.size || S.reg.has(c.regiao)) && valOk(c) && (S.st === "TODOS" || c.status === S.st)).length;
+    const nSt = (S.st === "PENDENTE" ? pendAll : allDay).filter(c => (!S.reg.size || S.reg.has(c.regiao)) && valOk(c) && (S.st === "TODOS" || c.status === S.st)).length;
     const tog = (id, txt, n, act) => { const t = $("#" + id + "T"); t.innerHTML = `${esc(txt)} <i>${n}</i> <span class="car">▾</span>`; t.classList.toggle("act", act); };
     tog("fReg", reg.size ? [...reg].join(" + ") : "Todas", reg.size ? base.filter(c => reg.has(c.regiao)).length : base.length, reg.size > 0);
     tog("fVal", S.val.size ? [...S.val].join(" + ") : "Todos", S.val.size ? vbase.filter(c => S.val.has(valOf(c))).length : vbase.length, S.val.size > 0);
@@ -718,7 +780,7 @@
   function rowHtml(c) {
     const L = c.last, u = L.urls;
     const rec = c.recusas === 0 ? "" : `<span class="rec ${c.recusas >= 3 ? "r3" : c.recusas === 2 ? "r2" : "r1"}">${c.recusas >= 3 ? "⚠ " : ""}${c.recusas}× recusada</span>`;
-    const caso = `<div class="lgbox"><small>Abrir Logistic</small><div class="lgpair"><a class="btn pri" target="_blank" rel="noopener" href="${LOGISTIC_URL}" data-lg="${c.id}" title="Copia o ID e abre o Logistic no navegador normal">🌐 Normal ↗</a><button type="button" class="btn lgan" data-lga="${c.id}" title="Copia o link do Logistic para colar numa janela anônima">🕶 Anônimo</button></div></div>`;
+    const caso = `<div class="lgbox"><small>Abrir Logistic</small><div class="lgpair"><a class="btn pri" target="_blank" rel="noopener" href="${LOGISTIC_URL}" data-lg="${esc(idTxt(c))}" title="Copia o ID e abre o Logistic no navegador normal">🌐 Normal ↗</a><button type="button" class="btn lgan" data-lga="${c.id}" title="Copia o link do Logistic para colar numa janela anônima">🕶 Anônimo</button></div></div>`;
     // Mensagens da aba "Mensagem Logistic" direto na linha: um clique copia a mensagem
     const msgTrat = `<div class="lgbox msgbox"><small>Mensagem Logistic</small><div class="msgchips">${MSGS.map(([t, m], i) => `<button type="button" class="mini msgchip" data-msgc="${i}" title="${esc(m)}">${esc(t)}</button>`).join("")}</div></div>`;
     const evid = u.length ? `<div class="fotos"><a class="btn ph" target="_blank" rel="noopener" href="${esc(u[0])}" title="Abrir a foto no Drive">📷 Ver foto</a>${u.slice(1).map((x, i) => `<a class="btn sm" target="_blank" rel="noopener" href="${esc(x)}" title="Abrir a foto ${i + 2}">📷 ${i + 2}</a>`).join("")}</div>` : (L.evid ? `<span class="mu" title="${esc(L.evid)}">arquivo sem link</span>` : "");
@@ -731,7 +793,7 @@
     const mr = hasDesc(c.status) ? `<input class="mr" data-mr="${c.id}" placeholder="${descLabel(c.status)} (escreva aqui)" value="${esc(L.motRecusa)}">` : "";
     const hist = `<div class="h hh">${c.recusas}× recusada neste ID · ${c.tent} envio${c.tent > 1 ? "s" : ""}</div>` + c.att.map((a, ix) => ({ a, ix })).reverse().map(({ a, ix }) => `<div class="h"><span>${fmtDT(a.ts)}</span>${a.validador && valStyle(a.validador) ? `<span class="bd"${valStyle(a.validador)}>${esc(a.validador)}</span>` : `<span>${esc(a.validador) || "—"}</span>`}<span class="bd ${BADGE[a.status] || ""}"${stStyle(a.status, "badge")}>${esc(badge(a.status))}</span><span>${esc(prettyMotivo(a.motivo)) || "—"}</span>${a.urls.length ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(a.urls[0])}" title="Abrir a foto desse envio">📷</a>` : ""}${a.motRecusa ? `<em>${descLabel(a.status)}: ${esc(a.motRecusa)}</em>` : ""}</div>`).join("");
     return `<div class="fr${c.recusas >= 2 ? " hot" : ""}${L.edited ? " ed" : ""}${c.id === tratando ? " trat" : ""}${selectedIds.has(c.id) ? " selected" : ""}" data-id="${c.id}">
-  <div class="c1"><b class="idv">${c.id}</b><button class="mini" data-cp="${c.id}" title="Copiar ID">⧉</button><button class="mini remove-id" data-remove="${c.id}" title="Ocultar este ID: some da lista e não entra na cópia nem no BAIXAR FORMS">✕</button><div class="mu">${c.code ? esc(c.code) + " · " : ""}${esc(c.regiao)}${c.lote ? " · enviado em lote" : ""}</div>${L.focal ? `<div class="mu focal">Focal: ${esc(L.focal)}</div>` : ""}<button class="mini cpall" data-cpall="${c.id}" title="Copiar mensagem completa">⧉ Copiar mensagem ID, base e focal</button></div>
+  <div class="c1"><b class="idv"${c.semId ? ' title="Esta resposta veio sem ID de 11 dígitos"' : ""}>${esc(idTxt(c))}</b><button class="mini" data-cp="${esc(idTxt(c))}" title="Copiar ID">⧉</button><button class="mini remove-id" data-remove="${c.id}" title="Ocultar este ID: some da lista e não entra na cópia nem no BAIXAR FORMS">✕</button><div class="mu">${c.extra ? "↺ envio anterior do mesmo ID, ainda sem validar · " : ""}${c.semId ? "⚠ sem ID válido · " : ""}${c.code ? esc(c.code) + " · " : ""}${esc(c.regiao)}${c.lote ? " · enviado em lote" : ""}</div>${L.focal ? `<div class="mu focal">Focal: ${esc(L.focal)}</div>` : ""}<button class="mini cpall" data-cpall="${c.id}" title="Copiar mensagem completa">⧉ Copiar mensagem ID, base e focal</button></div>
   <div class="c2">${sel} ${rec}${L.edited ? ' <span class="edtag">✎ editado</span>' : ""}<div class="vrow">${vsel}</div><div class="mu">${c.tent} envio${c.tent > 1 ? "s" : ""} · último ${fmtDT(L.ts)}</div></div>
   <div class="c3"><div class="mot" title="${esc(L.motivo)}">${esc(prettyMotivo(L.motivo)) || "—"}</div><div class="mu">Motorista: ${esc(L.motorista) || "—"}</div>${c.id === tratando ? tratTag(c.id) : ""}${mr}</div>
   <div class="c4">${caso}${msgTrat}${evid}${c.tent > 1 ? `<button class="mini" data-h="${c.id}">Histórico (${c.tent})</button>` : ""}</div>
@@ -839,7 +901,7 @@
       const c = byId.get(t.dataset.cpall), L = c ? c.last : null;
       if (c) {
         const parts = [c.code || L.baseRaw, L.focal].filter(Boolean);
-        copy(`🚨 ID: ${c.id}${parts.length ? " - " + parts.join(" - ") : ""}\nPor favor, reenviar evidência.`);
+        copy(`🚨 ID: ${idTxt(c)}${parts.length ? " - " + parts.join(" - ") : ""}\nPor favor, reenviar evidência.`);
         flash(t, "✓ copiado");
       }
     }
@@ -892,7 +954,7 @@
   $("#fQ").oninput = e => { S.q = e.target.value; S.limit = 100; A && render(); };
   $("#fMore").onclick = () => { S.limit += 100; render(); };
   $("#fCopyIds").onclick = e => {
-    const ids = A.cases.filter(c => matches(c)).sort(sorters[S.sort]).map(c => c.id);
+    const ids = A.cases.filter(c => matches(c)).sort(sorterNow()).map(c => idTxt(c));
     copy(ids.join("\n")); flash(e.target, `✓ ${ids.length} IDs copiados`);
   };
   // print da lista atual (status + regionais marcadas)
