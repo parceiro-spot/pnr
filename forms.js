@@ -204,7 +204,7 @@
         if (ed.s !== undefined && (ed.os === undefined || normStatus(ed.os) !== last.status)) { delete ed.s; delete ed.os; }
         if (ed.m !== undefined && (ed.om === undefined || String(ed.om ?? "") !== String(last.motRecusa ?? ""))) { delete ed.m; delete ed.om; }
         if (ed.v !== undefined && (ed.ov === undefined || N(ed.ov) !== N(last.validador))) { delete ed.v; delete ed.ov; }
-        if (ed.s === undefined && ed.m === undefined && ed.v === undefined) delete edits[id];
+        if (ed.s === undefined && ed.m === undefined && ed.v === undefined && ed.hold === undefined) delete edits[id];
         else {
           const cp = { ...last, edited: true, editAt: ed.at || 0, origStatus: last.status, origMot: last.motRecusa, origVal: last.validador };
           if (ed.s) { cp.status = normStatus(ed.s); cp.statusOut = ed.s; }
@@ -357,6 +357,9 @@
   };
   let forms = null, A = null, tratando = null, formsHeader = null, lastHeader = null; // tratando = ID que você está tratando agora
   const selectedIds = new Set();
+  // IDs que chegaram pela sincronização ao vivo: aparecem primeiro na tela,
+  // mas não alteram a ordem interna usada para copiar de volta ao Forms.
+  const newLiveIds = new Set();
   // IDs ocultos (✕): só somem da lista e das cópias / BAIXAR FORMS. A análise (recusas, histórico, alterações
   // de status/validador) continua intacta. O valor guardado é o carimbo do envio que foi ocultado: se chegar
   // um envio NOVO do mesmo ID, ele volta para a lista. 0 = oculto sempre.
@@ -384,6 +387,12 @@
   let heldStatuses = store.get("forms_status_holds", {}) || {};
   const saveHeldStatuses = () => store.set("forms_status_holds", heldStatuses);
   const shownStatus = c => heldStatuses[c.id] || c.status;
+  function clearHeldStatuses() {
+    heldStatuses = {};
+    for (const id of Object.keys(edits)) if (edits[id] && edits[id].hold !== undefined) delete edits[id].hold;
+    saveHeldStatuses();
+    store.set("forms_edits", edits);
+  }
   const SEM_VAL = "(sem validador)";
   const S = { st: "PENDENTE", reg: new Set(), val: new Set(), dt: "TUDO", sort: "old", q: "", limit: 100 };
   // nome do validador do pacote (usa o nome padrão da lista quando bate, senão o que veio do Forms)
@@ -570,7 +579,7 @@
   function ingest(incoming, nome) {
     // Anexar uma nova planilha é uma confirmação manual equivalente ao botão
     // Atualizar agora: os status locais podem seguir para suas abas.
-    if (nome !== "Forms ao vivo" && Object.keys(heldStatuses).length) { heldStatuses = {}; saveHeldStatuses(); }
+    if (nome !== "Forms ao vivo" && Object.keys(heldStatuses).length) clearHeldStatuses();
     if (lastHeader && lastHeader.length) { formsHeader = lastHeader.slice(); idb.set("forms_header", formsHeader).catch(() => { }); }
     const idsDe = rs => { rs = Array.isArray(rs) ? rs : []; const k = Core.colMap(rs).id; return rs.flatMap(r => k ? extractIds(r[k]) : []); };
     const idsAntes = new Set(idsDe(forms));
@@ -689,27 +698,12 @@
       liveLast = Date.now();
       const got = await liveFetchAll();
       const pr = { data: got.rows };
-      // A atualização automática pode trazer IDs novos, mas não deve mover
-      // uma validação feita localmente antes de a pessoa confirmar no botão.
-      // Se a planilha já trouxer outro status para o mesmo ID, foi uma mudança
-      // externa e ela pode prevalecer imediatamente.
-      if (Object.keys(heldStatuses).length) {
-        const HC = Core.colMap(pr.data), hs = new Set(Object.keys(heldStatuses));
-        const latest = new Map();
-        for (const r of pr.data) {
-          const ids = HC.id ? extractIds(r[HC.id]) : [];
-          if (!ids.length) continue;
-          const d = HC.ts ? parseTs(r[HC.ts]) : null, t = d ? d.getTime() : 0;
-          for (const id of ids) {
-            if (!hs.has(id)) continue;
-            const old = latest.get(id);
-            if (!old || t >= old.t) latest.set(id, { t, status: normStatus(HC.status ? r[HC.status] : "") });
-          }
-        }
-        if (manual) heldStatuses = {};
-        else for (const id of hs) if (latest.has(id) && latest.get(id).status !== heldStatuses[id]) delete heldStatuses[id];
-        saveHeldStatuses();
-      }
+      if (manual) newLiveIds.clear();
+      // A atualização automática pode trazer IDs novos e atualizar a base,
+      // mas nunca move para outra aba os pacotes que estão sendo editados no
+      // Dash. Todos os holds só são liberados com confirmação manual em
+      // “Atualizar agora” (ou ao anexar uma nova planilha).
+      if (manual && Object.keys(heldStatuses).length) clearHeldStatuses();
       const before = forms ? forms.length : 0;
       // espelha a planilha: o que foi apagado lá (ou teve o ID trocado) sai do dash; as alterações que você marcou ficam guardadas
       let removed = 0, warnTxt = "";
@@ -720,6 +714,8 @@
         else if (pm.removed) warnTxt = ` · ⚠ a planilha veio com ${pm.removed} linhas a menos; não apaguei nada (clique em ↻ Atualizar agora para confirmar)`;
       }
       const { r, idsNovos } = ingest(pr.data, "Forms ao vivo");
+      idsNovos.forEach(id => newLiveIds.add(id));
+      if (idsNovos.size) render();
       // diagnóstico: quantas linhas o CSV trouxe, quantas foram descartadas por ID inválido e qual é a resposta mais recente
       const ult = A && A.cases.length ? A.cases.reduce((m, c) => ((c.last.ts ? c.last.ts.getTime() : 0) > (m.last.ts ? m.last.ts.getTime() : 0) ? c : m)) : null;
       const diag = ` · fonte: ${got.src} · ${pr.data.length} linhas${A && A.invalid.length ? ` (${A.invalid.length} sem ID válido)` : ""}${ult ? ` · última: ${fmtDT(ult.last.ts)} ID ${ult.id}` : ""}`;
@@ -748,6 +744,10 @@
   }
 
   function reanalyze() {
+    // Reconstitui os holds depois de qualquer recálculo da tela ou atualização
+    // automática, evitando que a troca de aba faça um pacote desaparecer.
+    for (const id of Object.keys(edits)) if (edits[id] && edits[id].hold !== undefined) heldStatuses[id] = edits[id].hold;
+    saveHeldStatuses();
     A = analyze(forms, edits);
     store.set("forms_edits", edits);
     byId = new Map(A.cases.map(c => [c.id, c]));
@@ -784,7 +784,11 @@
   // "Todas" fica na ordem da tabela do Forms (mais antigo → mais novo); a cópia para o Forms sempre sai nessa ordem, qualquer que seja a aba
   const sorterNow = () => S.st === "RECUSADA" ? sorters.new : S.st === "TODOS" ? sorters.old : sorters[S.sort];
   const idTxt = c => c.realId || (c.semId ? c.idShow : c.id);
-  const currentList = () => A.cases.filter(c => matches(c)).sort(sorterNow());
+  const currentList = () => A.cases.filter(c => matches(c)).sort((a, b) => {
+    const an = newLiveIds.has(a.id), bn = newLiveIds.has(b.id);
+    if (an !== bn) return an ? -1 : 1;
+    return sorterNow()(a, b);
+  });
   function render() { if (!statusTabs().some(t => t[0] === S.st)) S.st = "TODOS"; const list = currentList(); renderTop(list); renderList(list); }
   function renderTop(list) {
     // Os números dos cartões e dos filtros acompanham a data selecionada.
@@ -858,6 +862,7 @@
 
   function rowHtml(c) {
     const L = c.last, u = c.evidUrls && c.evidUrls.length ? c.evidUrls : L.urls;
+    const novo = newLiveIds.has(c.id) ? " · NOVO" : "";
     const rec = c.recusas === 0 ? "" : `<span class="rec ${c.recusas >= 3 ? "r3" : c.recusas === 2 ? "r2" : "r1"}">${c.recusas >= 3 ? "⚠ " : ""}${c.recusas}× recusada</span>`;
     const caso = `<div class="lgbox"><small>Abrir Logistic</small><div class="lgpair"><a class="btn pri" target="_blank" rel="noopener" href="${LOGISTIC_URL}" data-lg="${esc(idTxt(c))}" title="Copia o ID e abre o Logistic no navegador normal">🌐 Normal ↗</a><button type="button" class="btn lgan" data-lga="${c.id}" title="Copia o link do Logistic para colar numa janela anônima">🕶 Anônimo</button></div></div>`;
     // Mensagens da aba "Mensagem Logistic" direto na linha: um clique copia a mensagem
@@ -873,7 +878,7 @@
     const hist = `<div class="h hh">${c.recusas}× recusada neste ID · ${c.tent} envio${c.tent > 1 ? "s" : ""}</div>` + c.att.map((a, ix) => ({ a, ix })).reverse().map(({ a, ix }) => `<div class="h"><span>${fmtDT(a.ts)}</span>${a.validador && valStyle(a.validador) ? `<span class="bd"${valStyle(a.validador)}>${esc(a.validador)}</span>` : `<span>${esc(a.validador) || "—"}</span>`}<span class="bd ${BADGE[a.status] || ""}"${stStyle(a.status, "badge")}>${esc(badge(a.status))}</span><span>${esc(prettyMotivo(a.motivo)) || "—"}</span>${a.urls.length ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(a.urls[0])}" title="Abrir a foto desse envio">📷</a>` : ""}${a.motRecusa ? `<em>${descLabel(a.status)}: ${esc(a.motRecusa)}</em>` : ""}</div>`).join("");
     return `<div class="fr${c.recusas >= 2 ? " hot" : ""}${L.edited ? " ed" : ""}${c.id === tratando ? " trat" : ""}${selectedIds.has(c.id) ? " selected" : ""}" data-id="${c.id}">
   <div class="c1"><b class="idv"${c.semId ? ' title="Esta resposta veio sem ID de 11 dígitos"' : ""}>${esc(idTxt(c))}</b><button class="mini" data-cp="${esc(idTxt(c))}" title="Copiar ID">⧉</button><button class="mini remove-id" data-remove="${c.id}" title="Ocultar este ID: some da lista e não entra na cópia nem no BAIXAR FORMS">✕</button><div class="mu">${c.extra ? "↺ envio anterior do mesmo ID, ainda sem validar · " : ""}${c.semId ? "⚠ sem ID válido · " : ""}${c.code ? esc(c.code) + " · " : ""}${esc(c.regiao)}${c.lote ? " · enviado em lote" : ""}</div>${L.focal ? `<div class="mu focal">Focal: ${esc(L.focal)}</div>` : ""}<button class="mini cpall" data-cpall="${c.id}" title="Copiar mensagem completa">⧉ Copiar mensagem ID, base e focal</button></div>
-  <div class="c2">${sel} ${rec}${L.edited ? ' <span class="edtag">✎ editado</span>' : ""}<div class="vrow">${vsel}</div><div class="mu">${c.tent} envio${c.tent > 1 ? "s" : ""} · último ${fmtDT(L.ts)}</div></div>
+  <div class="c2">${sel} ${rec}${L.edited ? ' <span class="edtag">✎ editado</span>' : ""}<div class="vrow">${vsel}</div><div class="mu">${c.tent} envio${c.tent > 1 ? "s" : ""} · último ${fmtDT(L.ts)}${novo}</div></div>
   <div class="c3"><div class="mot" title="${esc(L.motivo)}">${esc(prettyMotivo(L.motivo)) || "—"}</div><div class="mu">Motorista: ${esc(L.motorista) || "—"}</div>${c.id === tratando ? tratTag(c.id) : ""}${mr}</div>
   <div class="c4">${caso}${msgTrat}${evid}${c.tent > 1 ? `<button class="mini" data-h="${c.id}">Histórico (${c.tent})</button>` : ""}</div>
   <div class="hist" hidden>${hist}</div>
@@ -995,7 +1000,7 @@
   const tOf = c => (c.last.ts ? c.last.ts.getTime() : 0);
   const curEdit = c => (edits[c.id] && edits[c.id].t === tOf(c) ? edits[c.id] : { t: tOf(c) });
   function keepEdit(c, ed) {
-    if (ed.s === undefined && ed.m === undefined && ed.v === undefined) delete edits[c.id]; else { ed.at = Date.now(); edits[c.id] = ed; } // 'at' = quando você mexeu (usado no BAIXAR FORMS)
+    if (ed.s === undefined && ed.m === undefined && ed.v === undefined && ed.hold === undefined) delete edits[c.id]; else { ed.at = Date.now(); edits[c.id] = ed; } // 'at' = quando você mexeu (usado no BAIXAR FORMS)
     store.set("forms_edits", edits);
   }
   function saveReason(el, final) {
@@ -1021,8 +1026,8 @@
       // Mantém a linha na situação que estava sendo trabalhada até o próximo
       // Forms ao vivo. Na próxima sincronização o hold é limpo e o pacote
       // segue para a aba do novo status.
-      if (el.value && normStatus(el.value) !== orig) heldStatuses[c.id] = orig;
-      else delete heldStatuses[c.id];
+      if (el.value && normStatus(el.value) !== orig) { heldStatuses[c.id] = orig; ed.hold = orig; }
+      else { delete heldStatuses[c.id]; delete ed.hold; }
       saveHeldStatuses();
     }
     keepEdit(c, ed); reanalyze();
