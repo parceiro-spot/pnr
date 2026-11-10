@@ -96,8 +96,15 @@
     return s || raw.toLocaleUpperCase("pt-BR");
   }
   const URLS = v => {
-    const m = String(v ?? "").match(/(?:https?:\/\/|(?:drive|docs)\.google\.com)[^\s,;]+/gi) || [];
-    return [...new Set(m.map(u => u.replace(/[)\].>"']+$/, "")).map(u => { const p = u.split(/(?=https?:\/\/)/); return p[p.length - 1]; }).map(u => (/^https?:/i.test(u) ? u : "https://" + u)))];
+    // O Forms pode publicar a resposta como URL simples, HYPERLINK(), link
+    // quebrado em várias linhas ou como URL do Drive sem o protocolo.
+    // Aceitar todos esses formatos evita que a foto desapareça só porque a
+    // planilha publicada mudou a forma de serializar o anexo.
+    const text = String(v ?? "").replace(/&amp;/gi, "&");
+    const m = text.match(/(?:https?:\/\/|(?:drive|docs)\.google\.com)[^\s,;<>"']+/gi) || [];
+    return [...new Set(m.map(u => u.replace(/[)\].>]+$/, "").replace(/["']+$/, ""))
+      .map(u => (/^https?:/i.test(u) ? u : "https://" + u))
+      .filter(u => /(?:drive|docs)\.google\.com/i.test(u)))];
   };
   // ID do arquivo no Drive (open?id=…, /file/d/…/view, uc?id=…)
   const driveId = u => { const m = String(u).match(/[?&]id=([\w-]{15,})/) || String(u).match(/\/d\/([\w-]{15,})/); return m ? m[1] : ""; };
@@ -209,6 +216,9 @@
         id, att, last, status: last.status, recusas, tent: att.length, code, semId: !!last.semId, idShow: last.semId ? last.idShow : "",
         regiao: code ? regionOf(code) : SEM_REG, dia: dayKey(last.ts), lote: att.some(a => a.ids.length > 1),
         recusaMotivos: att.filter(a => a.status === "RECUSADA" && a.motRecusa).map(a => a.motRecusa),
+        // O último envio pode não repetir o anexo. Preserve as fotos de todos
+        // os envios para que uma atualização do Forms ao vivo não as esconda.
+        evidUrls: [...new Set(att.flatMap(a => a.urls || []))],
         extra: !!realId, realId: realId || ""
       });
     };
@@ -808,7 +818,7 @@
   }
 
   function rowHtml(c) {
-    const L = c.last, u = L.urls;
+    const L = c.last, u = c.evidUrls && c.evidUrls.length ? c.evidUrls : L.urls;
     const rec = c.recusas === 0 ? "" : `<span class="rec ${c.recusas >= 3 ? "r3" : c.recusas === 2 ? "r2" : "r1"}">${c.recusas >= 3 ? "⚠ " : ""}${c.recusas}× recusada</span>`;
     const caso = `<div class="lgbox"><small>Abrir Logistic</small><div class="lgpair"><a class="btn pri" target="_blank" rel="noopener" href="${LOGISTIC_URL}" data-lg="${esc(idTxt(c))}" title="Copia o ID e abre o Logistic no navegador normal">🌐 Normal ↗</a><button type="button" class="btn lgan" data-lga="${c.id}" title="Copia o link do Logistic para colar numa janela anônima">🕶 Anônimo</button></div></div>`;
     // Mensagens da aba "Mensagem Logistic" direto na linha: um clique copia a mensagem
