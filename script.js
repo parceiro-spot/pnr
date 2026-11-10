@@ -1,4 +1,11 @@
 const $ = s => document.querySelector(s);
+// A navegação principal pertence ao aplicativo inteiro, não apenas ao módulo
+// Forms. Assim, uma falha na leitura do Forms ao vivo não deixa a Análise PNR
+// sem resposta ao clique.
+document.querySelectorAll("#nav button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("#nav button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll("#nav button").forEach(x => { const view = document.getElementById(x.dataset.v); if (view) view.hidden = x !== b; });
+}));
 const ST = ["Com penalidade", "Aguardando comprovante"];
 let pnr = null, bsc = null, rows = [], total = 0, statusAll = {};
 let cur = ST[0], tipo = "TODOS", data = "TUDO", regional = "TODAS", charts = [];
