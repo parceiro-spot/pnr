@@ -568,6 +568,9 @@
   });
   // junta as linhas lidas (arquivo ou link ao vivo) com as já salvas e atualiza a tela
   function ingest(incoming, nome) {
+    // Anexar uma nova planilha é uma confirmação manual equivalente ao botão
+    // Atualizar agora: os status locais podem seguir para suas abas.
+    if (nome !== "Forms ao vivo" && Object.keys(heldStatuses).length) { heldStatuses = {}; saveHeldStatuses(); }
     if (lastHeader && lastHeader.length) { formsHeader = lastHeader.slice(); idb.set("forms_header", formsHeader).catch(() => { }); }
     const idsDe = rs => { rs = Array.isArray(rs) ? rs : []; const k = Core.colMap(rs).id; return rs.flatMap(r => k ? extractIds(r[k]) : []); };
     const idsAntes = new Set(idsDe(forms));
@@ -686,9 +689,27 @@
       liveLast = Date.now();
       const got = await liveFetchAll();
       const pr = { data: got.rows };
-      // A partir deste ponto a leitura do Forms foi bem-sucedida: libera os
-      // status locais para que os pacotes sigam para suas abas corretas.
-      if (Object.keys(heldStatuses).length) { heldStatuses = {}; saveHeldStatuses(); }
+      // A atualização automática pode trazer IDs novos, mas não deve mover
+      // uma validação feita localmente antes de a pessoa confirmar no botão.
+      // Se a planilha já trouxer outro status para o mesmo ID, foi uma mudança
+      // externa e ela pode prevalecer imediatamente.
+      if (Object.keys(heldStatuses).length) {
+        const HC = Core.colMap(pr.data), hs = new Set(Object.keys(heldStatuses));
+        const latest = new Map();
+        for (const r of pr.data) {
+          const ids = HC.id ? extractIds(r[HC.id]) : [];
+          if (!ids.length) continue;
+          const d = HC.ts ? parseTs(r[HC.ts]) : null, t = d ? d.getTime() : 0;
+          for (const id of ids) {
+            if (!hs.has(id)) continue;
+            const old = latest.get(id);
+            if (!old || t >= old.t) latest.set(id, { t, status: normStatus(HC.status ? r[HC.status] : "") });
+          }
+        }
+        if (manual) heldStatuses = {};
+        else for (const id of hs) if (latest.has(id) && latest.get(id).status !== heldStatuses[id]) delete heldStatuses[id];
+        saveHeldStatuses();
+      }
       const before = forms ? forms.length : 0;
       // espelha a planilha: o que foi apagado lá (ou teve o ID trocado) sai do dash; as alterações que você marcou ficam guardadas
       let removed = 0, warnTxt = "";
