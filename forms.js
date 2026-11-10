@@ -308,7 +308,29 @@
     return { rows: all, added, updated };
   }
 
-  const Core = { colMap, mergeRows, formsOrder, chronoDedupe, currentRowIndexes, VALIDADORES, prettyMotivo, driveId, URLS, analyze, applyEdits, extractIds, extractCodes, regionOf, parseTs, normStatus, REGIONAIS, SEM_REG, LOGISTIC_URL, dayKey, fmtDay, fmtDT, esc };
+  // Espelha a planilha: devolve só as linhas salvas que AINDA existem em "incoming" (mesmo carimbo e, se os dois têm ID, o mesmo ID).
+  // Linhas apagadas da planilha (ou com ID trocado) saem. Sem carimbo: não mexe. rangeOnly = a fonte tem só parte das abas,
+  // então só confere as linhas a partir do 1º carimbo dela (as mais antigas, de outras abas, ficam).
+  function pruneMissing(existing, incoming, rangeOnly) {
+    const all = Array.isArray(existing) ? existing : [], inc = Array.isArray(incoming) ? incoming : [];
+    const C = colMap([...all.slice(0, 50), ...inc.slice(0, 50)]), tk = C.ts, ik = C.id;
+    detectTsOrder([...all, ...inc], tk);
+    const tsKey = r => { const d = tk ? parseTs(r[tk]) : null; return d ? d.getTime() : 0; };
+    const idKey = r => (ik ? String(r[ik] ?? "").replace(/\D+/g, " ").trim() : "");
+    const byTs = new Map(), full = new Set(inc.map(rowKey));
+    let min = Infinity, max = -Infinity;
+    for (const r of inc) { const t = tsKey(r); if (!t) continue; if (!byTs.has(t)) byTs.set(t, []); byTs.get(t).push(r); if (t < min) min = t; if (t > max) max = t; }
+    const rows = []; let removed = 0;
+    for (const r of all) {
+      const t = tsKey(r);
+      if (!t || (rangeOnly && t < min) || full.has(rowKey(r))) { rows.push(r); continue; }
+      const a = idKey(r);
+      if ((byTs.get(t) || []).some(b => { const ib = idKey(b); return !a || !ib || a === ib; })) rows.push(r); else removed++;
+    }
+    return { rows, removed };
+  }
+
+  const Core = { colMap, mergeRows, pruneMissing, formsOrder, chronoDedupe, currentRowIndexes, VALIDADORES, prettyMotivo, driveId, URLS, analyze, applyEdits, extractIds, extractCodes, regionOf, parseTs, normStatus, REGIONAIS, SEM_REG, LOGISTIC_URL, dayKey, fmtDay, fmtDT, esc };
   if (typeof module !== "undefined" && module.exports) module.exports = Core;
   root.FormsCore = Core;
   if (typeof document === "undefined") return;
@@ -622,7 +644,7 @@
       out.push(...await fetchCsv(u)); src.push(key && live.all ? "só a aba do link (CSV; o Google não liberou todas as abas)" : "CSV (só a aba do link)");
     }
     liveHeavy = src.some(x => /xlsx|ods/.test(x));
-    return { rows: out, src: [...new Set(src)].join(" + ") };
+    return { rows: out, src: [...new Set(src)].join(" + "), complete: src.every(x => /^todas as abas/.test(x)) };
   }
   const saveLive = () => store.set("forms_live", live);
   const hhmm = () => new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -640,14 +662,22 @@
       const got = await liveFetchAll();
       const pr = { data: got.rows };
       const before = forms ? forms.length : 0;
+      // espelha a planilha: o que foi apagado lá (ou teve o ID trocado) sai do dash; as alterações que você marcou ficam guardadas
+      let removed = 0, warnTxt = "";
+      if (forms && forms.length && pr.data.length) {
+        const pm = Core.pruneMissing(forms, pr.data, !got.complete);
+        const big = pm.removed > 20 && pm.removed > forms.length * 0.5; // proteção: não apaga a maior parte sem confirmar
+        if (pm.removed && (!big || (manual && confirm(`A planilha ao vivo não tem mais ${pm.removed} das ${forms.length} linhas que o dash guardava. Apagar essas ${pm.removed} do dash?`)))) { forms = pm.rows; removed = pm.removed; }
+        else if (pm.removed) warnTxt = ` · ⚠ a planilha veio com ${pm.removed} linhas a menos; não apaguei nada (clique em ↻ Atualizar agora para confirmar)`;
+      }
       const { r, idsNovos } = ingest(pr.data, "Forms ao vivo");
       // diagnóstico: quantas linhas o CSV trouxe, quantas foram descartadas por ID inválido e qual é a resposta mais recente
       const ult = A && A.cases.length ? A.cases.reduce((m, c) => ((c.last.ts ? c.last.ts.getTime() : 0) > (m.last.ts ? m.last.ts.getTime() : 0) ? c : m)) : null;
       const diag = ` · fonte: ${got.src} · ${pr.data.length} linhas${A && A.invalid.length ? ` (${A.invalid.length} sem ID válido)` : ""}${ult ? ` · última: ${fmtDT(ult.last.ts)} ID ${ult.id}` : ""}`;
-      if (r.added || r.updated || !before) {
-        liveMsg(`✓ ${hhmm()} · +${r.added} novas · ${r.updated} atualizadas${diag}`);
+      if (r.added || r.updated || removed || !before) {
+        liveMsg(`✓ ${hhmm()} · +${r.added} novas · ${r.updated} atualizadas${removed ? ` · −${removed} apagadas da planilha` : ""}${diag}${warnTxt}`, !!warnTxt);
         if (r.added) toast(`Forms ao vivo: +${r.added} resposta${r.added > 1 ? "s" : ""} nova${r.added > 1 ? "s" : ""} (${idsNovos.size} ID${idsNovos.size === 1 ? "" : "s"} novo${idsNovos.size === 1 ? "" : "s"}).`);
-      } else liveMsg(`✓ ${hhmm()} · sem novidades${diag}`);
+      } else liveMsg(`✓ ${hhmm()} · sem novidades${diag}${warnTxt}`, !!warnTxt);
     } catch (e) {
       console.error(e);
       liveMsg(`✕ ${hhmm()} · não consegui buscar (${e && e.message || e}). Tento de novo em 30 s.`, true);
