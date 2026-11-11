@@ -96,15 +96,8 @@
     return s || raw.toLocaleUpperCase("pt-BR");
   }
   const URLS = v => {
-    // O Forms pode publicar a resposta como URL simples, HYPERLINK(), link
-    // quebrado em várias linhas ou como URL do Drive sem o protocolo.
-    // Aceitar todos esses formatos evita que a foto desapareça só porque a
-    // planilha publicada mudou a forma de serializar o anexo.
-    const text = String(v ?? "").replace(/&amp;/gi, "&");
-    const m = text.match(/(?:https?:\/\/|(?:drive|docs)\.google\.com)[^\s,;<>"']+/gi) || [];
-    return [...new Set(m.map(u => u.replace(/[)\].>]+$/, "").replace(/["']+$/, ""))
-      .map(u => (/^https?:/i.test(u) ? u : "https://" + u))
-      .filter(u => /(?:drive|docs)\.google\.com/i.test(u)))];
+    const m = String(v ?? "").match(/(?:https?:\/\/|(?:drive|docs)\.google\.com)[^\s,;]+/gi) || [];
+    return [...new Set(m.map(u => u.replace(/[)\].>"']+$/, "")).map(u => { const p = u.split(/(?=https?:\/\/)/); return p[p.length - 1]; }).map(u => (/^https?:/i.test(u) ? u : "https://" + u)))];
   };
   // ID do arquivo no Drive (open?id=…, /file/d/…/view, uc?id=…)
   const driveId = u => { const m = String(u).match(/[?&]id=([\w-]{15,})/) || String(u).match(/\/d\/([\w-]{15,})/); return m ? m[1] : ""; };
@@ -151,32 +144,22 @@
     rows = Array.isArray(rows) ? rows : [];
     const C = colMap(rows), g = (r, k) => (k ? r[k] : "");
     detectTsOrder(rows, C.ts);
-    const items = [], invalid = [], semCount = new Map();
+    const items = [], invalid = [];
     rows.forEach((r, i) => {
       const idRaw = String(g(r, C.id) ?? "").trim(), ts = parseTs(g(r, C.ts));
       if (!idRaw && !ts) return; // linha vazia no fim da planilha
       const evid = String(g(r, C.evid) ?? "");
-      // Em algumas versões/publicações do Google Forms o link do anexo fica
-      // em uma coluna auxiliar ou com um cabeçalho diferente. Não descarte a
-      // foto só por causa do nome da coluna: procure URLs do Drive na linha.
-      const evidSource = [evid, ...Object.values(r)].join(" ");
       const it = {
         i, ts, validador: String(g(r, C.validador) ?? "").trim(), status: normStatus(g(r, C.status)),
         idRaw, ids: extractIds(idRaw), baseRaw: String(g(r, C.base) ?? "").trim(), codes: extractCodes(g(r, C.base)),
-        motivo: String(g(r, C.motivo) ?? "").trim(), evid, urls: URLS(evidSource),
+        motivo: String(g(r, C.motivo) ?? "").trim(), evid, urls: URLS(evid),
         focal: String(g(r, C.focal) ?? "").trim(), motorista: String(g(r, C.motorista) ?? "").trim(),
         email: String(g(r, C.email) ?? "").trim(), motRecusa: String(g(r, C.recusa) ?? "").trim()
       };
       const before = it.ids.length;
       it.ids = it.ids.filter(id => !excludedIds.has(id));
       if (!it.ids.length && before) return; // ID válido, mas removido de propósito (✕)
-      if (!it.ids.length) {
-        // sem ID de 11 dígitos (vazio, truncado, 12 dígitos, nome no lugar…): entra na lista mesmo assim,
-        // como um pacote só dessa resposta (não dá para juntar com outros envios sem um ID de verdade)
-        const base = "SEMID-" + (it.ts ? it.ts.getTime() : "L" + i), n = semCount.get(base) || 0;
-        semCount.set(base, n + 1);
-        it.ids = [n ? `${base}-${n + 1}` : base]; it.semId = true; it.idShow = idRaw || "SEM ID";
-      }
+      if (!it.ids.length) { invalid.push(it); return; } // sem ID, ou ID digitado errado (truncado, 12 dígitos, nome…)
       items.push(it);
     });
     // Status fora da lista padrão (novos, digitados na planilha): "Em revisão", "EM REVISAO " e "em revisão" são o mesmo status.
@@ -194,7 +177,8 @@
       by.get(id).push(it);
     }
     const cases = [];
-    const buildCase = (id, att, realId) => {
+    for (const [id, att] of by) {
+      att.sort((a, b) => ((a.ts?.getTime() || 0) - (b.ts?.getTime() || 0)) || a.i - b.i);
       let last = att[att.length - 1];
       // O Forms prevalece sobre edições locais se o campo mudou desde o snapshot salvo.
       const ed = edits && edits[id];
@@ -204,7 +188,7 @@
         if (ed.s !== undefined && (ed.os === undefined || normStatus(ed.os) !== last.status)) { delete ed.s; delete ed.os; }
         if (ed.m !== undefined && (ed.om === undefined || String(ed.om ?? "") !== String(last.motRecusa ?? ""))) { delete ed.m; delete ed.om; }
         if (ed.v !== undefined && (ed.ov === undefined || N(ed.ov) !== N(last.validador))) { delete ed.v; delete ed.ov; }
-        if (ed.s === undefined && ed.m === undefined && ed.v === undefined && ed.hold === undefined) delete edits[id];
+        if (ed.s === undefined && ed.m === undefined && ed.v === undefined) delete edits[id];
         else {
           const cp = { ...last, edited: true, editAt: ed.at || 0, origStatus: last.status, origMot: last.motRecusa, origVal: last.validador };
           if (ed.s) { cp.status = normStatus(ed.s); cp.statusOut = ed.s; }
@@ -217,21 +201,10 @@
       for (let k = att.length - 1; k >= 0 && !code; k--) code = att[k].codes[0] || "";
       const recusas = att.filter(a => a.status === "RECUSADA").length;
       cases.push({
-        id, att, last, status: last.status, recusas, tent: att.length, code, semId: !!last.semId, idShow: last.semId ? last.idShow : "",
+        id, att, last, status: last.status, recusas, tent: att.length, code,
         regiao: code ? regionOf(code) : SEM_REG, dia: dayKey(last.ts), lote: att.some(a => a.ids.length > 1),
-        recusaMotivos: att.filter(a => a.status === "RECUSADA" && a.motRecusa).map(a => a.motRecusa),
-        // O último envio pode não repetir o anexo. Preserve as fotos de todos
-        // os envios para que uma atualização do Forms ao vivo não as esconda.
-        evidUrls: [...new Set(att.flatMap(a => a.urls || []))],
-        extra: !!realId, realId: realId || ""
+        recusaMotivos: att.filter(a => a.status === "RECUSADA" && a.motRecusa).map(a => a.motRecusa)
       });
-    };
-    for (const [id, att] of by) {
-      att.sort((a, b) => ((a.ts?.getTime() || 0) - (b.ts?.getTime() || 0)) || a.i - b.i);
-      // Envios ANTERIORES do mesmo ID que continuam sem status (linha vazia na planilha) também são "A validar":
-      // cada um vira uma linha própria na lista (a foto do momento daquele envio), além do pacote com o envio atual.
-      for (let k = 0; k < att.length - 1; k++) if (att[k].status === "PENDENTE" && !att[k].semId) buildCase(`${id}~${att[k].i}`, att.slice(0, k + 1), id);
-      buildCase(id, att, "");
     }
     return { cases, invalid, rowsTotal: items.length + invalid.length, cols: C };
   }
@@ -250,7 +223,7 @@
       if (l.motOut !== undefined && C.recusa) row[C.recusa] = l.motOut;
       if (l.valOut !== undefined && C.validador) row[C.validador] = l.valOut;
       changes.push({
-        "Carimbo de data/hora": C.ts ? rows[l.i][C.ts] : "", "ID": c.realId || (c.semId ? c.idShow : c.id), "BASE": C.base ? row[C.base] : "",
+        "Carimbo de data/hora": C.ts ? rows[l.i][C.ts] : "", "ID": c.id, "BASE": C.base ? row[C.base] : "",
         "VALIDADOR": C.validador ? row[C.validador] : "", "STATUS DA EVIDÊNCIA": C.status ? row[C.status] : "", "MOTIVO RESCUSA": C.recusa ? row[C.recusa] : ""
       });
     }
@@ -298,7 +271,8 @@
   // Junta o arquivo novo com o que já estava salvo. O carimbo (data/hora com milésimos) identifica a resposta:
   // se a mesma resposta veio de novo com algo diferente (ID preenchido, validador, status…), vale a do arquivo novo
   // e a antiga sai (antes ficavam as duas e a antiga, sem ID, virava "sem ID válido").
-  function mergeRows(existing, incoming) {
+  function mergeRows(existing, incoming, options) {
+    const preferIncomingOrder = options === true || !!(options && options.preferIncomingOrder);
     const all = Array.isArray(existing) ? existing.slice() : [];
     const sample = [...all.slice(0, 50), ...(incoming || []).slice(0, 50)];
     const C = colMap(sample), tk = C.ts, ik = C.id;
@@ -308,43 +282,41 @@
     const full = new Set(all.map(rowKey)), byTs = new Map();
     all.forEach((r, i) => { const t = tsKey(r); if (t) { if (!byTs.has(t)) byTs.set(t, []); byTs.get(t).push(i); } });
     let added = 0, updated = 0;
+    const indexByKey = preferIncomingOrder ? new Map() : null;
+    if (indexByKey) all.forEach((r, i) => { const k = rowKey(r); if (!indexByKey.has(k)) indexByKey.set(k, i); });
+    const incomingOrder = [], orderedIndexes = new Set();
+    const rememberIncomingIndex = i => { if (indexByKey && Number.isInteger(i) && !orderedIndexes.has(i)) { orderedIndexes.add(i); incomingOrder.push(i); } };
     for (const row of incoming || []) {
       const k = rowKey(row);
-      if (full.has(k)) continue;
+      if (full.has(k)) { if (indexByKey) rememberIncomingIndex(indexByKey.get(k)); continue; }
       const t = tsKey(row), same = t ? (byTs.get(t) || []) : [];
       const a = idKey(row);
       // mesma resposta = mesmo carimbo e (um dos IDs vazio ou IDs iguais)
       const hit = same.find(i => { const b = idKey(all[i]); return !a || !b || a === b; });
-      if (hit !== undefined) { full.delete(rowKey(all[hit])); all[hit] = row; full.add(k); updated++; continue; }
+      if (hit !== undefined) {
+        const oldKey = rowKey(all[hit]);
+        full.delete(oldKey);
+        if (indexByKey && indexByKey.get(oldKey) === hit) indexByKey.delete(oldKey);
+        all[hit] = row; full.add(k); updated++;
+        if (indexByKey) indexByKey.set(k, hit);
+        rememberIncomingIndex(hit);
+        continue;
+      }
       all.push(row); full.add(k); added++;
-      if (t) { if (!byTs.has(t)) byTs.set(t, []); byTs.get(t).push(all.length - 1); }
+      const index = all.length - 1;
+      if (indexByKey) indexByKey.set(k, index);
+      rememberIncomingIndex(index);
+      if (t) { if (!byTs.has(t)) byTs.set(t, []); byTs.get(t).push(index); }
     }
-    return { rows: all, added, updated };
+    if (!indexByKey) return { rows: all, added, updated };
+    // No Ao Vivo, o CSV recém-consultado define a ordem dos horários empatados.
+    // Registros antigos ausentes do CSV continuam preservados depois, na ordem anterior.
+    const ordered = incomingOrder.map(i => all[i]);
+    all.forEach((row, i) => { if (!orderedIndexes.has(i)) ordered.push(row); });
+    return { rows: ordered, added, updated };
   }
 
-  // Espelha a planilha: devolve só as linhas salvas que AINDA existem em "incoming" (mesmo carimbo e, se os dois têm ID, o mesmo ID).
-  // Linhas apagadas da planilha (ou com ID trocado) saem. Sem carimbo: não mexe. rangeOnly = a fonte tem só parte das abas,
-  // então só confere as linhas a partir do 1º carimbo dela (as mais antigas, de outras abas, ficam).
-  function pruneMissing(existing, incoming, rangeOnly) {
-    const all = Array.isArray(existing) ? existing : [], inc = Array.isArray(incoming) ? incoming : [];
-    const C = colMap([...all.slice(0, 50), ...inc.slice(0, 50)]), tk = C.ts, ik = C.id;
-    detectTsOrder([...all, ...inc], tk);
-    const tsKey = r => { const d = tk ? parseTs(r[tk]) : null; return d ? d.getTime() : 0; };
-    const idKey = r => (ik ? String(r[ik] ?? "").replace(/\D+/g, " ").trim() : "");
-    const byTs = new Map(), full = new Set(inc.map(rowKey));
-    let min = Infinity, max = -Infinity;
-    for (const r of inc) { const t = tsKey(r); if (!t) continue; if (!byTs.has(t)) byTs.set(t, []); byTs.get(t).push(r); if (t < min) min = t; if (t > max) max = t; }
-    const rows = []; let removed = 0;
-    for (const r of all) {
-      const t = tsKey(r);
-      if (!t || (rangeOnly && t < min) || full.has(rowKey(r))) { rows.push(r); continue; }
-      const a = idKey(r);
-      if ((byTs.get(t) || []).some(b => { const ib = idKey(b); return !a || !ib || a === ib; })) rows.push(r); else removed++;
-    }
-    return { rows, removed };
-  }
-
-  const Core = { colMap, mergeRows, pruneMissing, formsOrder, chronoDedupe, currentRowIndexes, VALIDADORES, prettyMotivo, driveId, URLS, analyze, applyEdits, extractIds, extractCodes, regionOf, parseTs, normStatus, REGIONAIS, SEM_REG, LOGISTIC_URL, dayKey, fmtDay, fmtDT, esc };
+  const Core = { colMap, mergeRows, formsOrder, chronoDedupe, currentRowIndexes, VALIDADORES, prettyMotivo, driveId, URLS, analyze, applyEdits, extractIds, extractCodes, regionOf, parseTs, normStatus, REGIONAIS, SEM_REG, LOGISTIC_URL, dayKey, fmtDay, fmtDT, esc };
   if (typeof module !== "undefined" && module.exports) module.exports = Core;
   root.FormsCore = Core;
   if (typeof document === "undefined") return;
@@ -357,9 +329,6 @@
   };
   let forms = null, A = null, tratando = null, formsHeader = null, lastHeader = null; // tratando = ID que você está tratando agora
   const selectedIds = new Set();
-  // IDs que chegaram pela sincronização ao vivo: aparecem primeiro na tela,
-  // mas não alteram a ordem interna usada para copiar de volta ao Forms.
-  const newLiveIds = new Set();
   // IDs ocultos (✕): só somem da lista e das cópias / BAIXAR FORMS. A análise (recusas, histórico, alterações
   // de status/validador) continua intacta. O valor guardado é o carimbo do envio que foi ocultado: se chegar
   // um envio NOVO do mesmo ID, ele volta para a lista. 0 = oculto sempre.
@@ -381,18 +350,6 @@
     return extractIds(r[C.id]).some(id => { const h = hiddenMap[id]; return h !== undefined && (h === 0 || h === t); });
   };
   let edits = store.get("forms_edits", {}), byId = new Map();
-  // Status alterado localmente fica visualmente na aba atual até a próxima
-  // sincronização bem-sucedida do Forms ao vivo. Assim, ao marcar ANEXADA,
-  // o pacote não some imediatamente de A validar.
-  let heldStatuses = store.get("forms_status_holds", {}) || {};
-  const saveHeldStatuses = () => store.set("forms_status_holds", heldStatuses);
-  const shownStatus = c => heldStatuses[c.id] || c.status;
-  function clearHeldStatuses() {
-    heldStatuses = {};
-    for (const id of Object.keys(edits)) if (edits[id] && edits[id].hold !== undefined) delete edits[id].hold;
-    saveHeldStatuses();
-    store.set("forms_edits", edits);
-  }
   const SEM_VAL = "(sem validador)";
   const S = { st: "PENDENTE", reg: new Set(), val: new Set(), dt: "TUDO", sort: "old", q: "", limit: 100 };
   // nome do validador do pacote (usa o nome padrão da lista quando bate, senão o que veio do Forms)
@@ -407,7 +364,7 @@
   // qualquer status que aparecer na coluna STATUS DA EVIDÊNCIA vira aba + opção no seletor automaticamente,
   // e você pode trocar a cor (ou criar um status) em "🎨 Status e cores".
   const BUILTIN_ST = new Set(["PENDENTE", "RECUSADA", "ANEXADA", "ANULADA", "FATURADA", "NÃO SUBIR"]);
-  let stCfg = (() => { const c = store.get("forms_status_cfg", null) || {}; return { custom: Array.isArray(c.custom) ? c.custom : [], colors: c.colors && typeof c.colors === "object" ? c.colors : {}, desc: c.desc && typeof c.desc === "object" ? c.desc : {}, valColors: c.valColors && typeof c.valColors === "object" ? c.valColors : {} }; })();
+  let stCfg = (() => { const c = store.get("forms_status_cfg", null) || {}; return { custom: Array.isArray(c.custom) ? c.custom : [], colors: c.colors && typeof c.colors === "object" ? c.colors : {} }; })();
   const saveStCfg = () => store.set("forms_status_cfg", stCfg);
   let foundSt = [];
   const scanStatuses = () => {
@@ -435,15 +392,6 @@
     if (kind === "tab") return ` style="background:${mixHex(c, "#ffffff", .85)};border-color:${mixHex(c, "#ffffff", .35)};color:${mixHex(c, "#000000", .45)}"`;
     return ` style="background:${c};border-color:${c};color:${textOn(c)}"`;
   };
-
-  // descrição escrita (motivo): RECUSADA e EM ANÁLISE sempre têm; qualquer outro status ganha ao marcar "Descrição" em 🎨 Status e cores
-  const DESC_FIXED = new Set(["RECUSADA", "NÃO SUBIR"]);
-  const hasDesc = x => DESC_FIXED.has(x) || !!stCfg.desc[x];
-  const descLabel = x => x === "RECUSADA" ? "Motivo da recusa" : x === "NÃO SUBIR" ? "Motivo da análise" : "Descrição";
-  // cores dos validadores (as 4 primeiras são as do CSS original; a escolhida em 🎨 vale por cima)
-  const DEFAULT_VCOL = { KETHELLY: "#245b6b", EDUARDACARVALHO: "#6a45a8", VITORIA: "#7a3b0b", LUIZAFRANCA: "#fbd0d0" };
-  const valColor = n => stCfg.valColors[N(n)] || DEFAULT_VCOL[N(n)] || "";
-  const valStyle = n => { const c = stCfg.valColors[N(n)]; return c ? ` style="background:${c};border-color:${c};color:${textOn(c)}"` : ""; };
 
   // navegação entre as abas
   document.querySelectorAll("#nav button").forEach(b => b.onclick = () => {
@@ -552,8 +500,8 @@
       .then(() => { try { localStorage.removeItem("forms_rows"); } catch (e) { } })
       .catch(() => store.set("forms_rows", forms));
   }
-  function mergeForms(next) {
-    const r = Core.mergeRows(forms, next);
+  function mergeForms(next, preferIncomingOrder = false) {
+    const r = Core.mergeRows(forms, next, preferIncomingOrder ? { preferIncomingOrder: true } : undefined);
     forms = r.rows;
     saveRows();
     return r;
@@ -573,23 +521,15 @@
   wire("#fd1", "#ff1", "#fs1", async f => {
     await ready;
     const incoming = await readForms(f);
-    ingest(incoming, f.name);
-  });
-  // junta as linhas lidas (arquivo ou link ao vivo) com as já salvas e atualiza a tela
-  function ingest(incoming, nome) {
-    // Anexar uma nova planilha é uma confirmação manual equivalente ao botão
-    // Atualizar agora: os status locais podem seguir para suas abas.
-    if (nome !== "Forms ao vivo" && Object.keys(heldStatuses).length) clearHeldStatuses();
     if (lastHeader && lastHeader.length) { formsHeader = lastHeader.slice(); idb.set("forms_header", formsHeader).catch(() => { }); }
     const idsDe = rs => { rs = Array.isArray(rs) ? rs : []; const k = Core.colMap(rs).id; return rs.flatMap(r => k ? extractIds(r[k]) : []); };
     const idsAntes = new Set(idsDe(forms));
     const r = mergeForms(incoming);
     const idsNovos = new Set(idsDe(r.rows).filter(id => !idsAntes.has(id)));
-    $("#fs1").textContent = `${nome} · ${incoming.length.toLocaleString("pt-BR")} linhas lidas · ${r.rows.length.toLocaleString("pt-BR")} salvas` +
+    $("#fs1").textContent = `${f.name} · ${incoming.length.toLocaleString("pt-BR")} linhas lidas · ${r.rows.length.toLocaleString("pt-BR")} salvas` +
       (r.added || r.updated ? ` · +${r.added.toLocaleString("pt-BR")} respostas novas${r.updated ? ` · ${r.updated.toLocaleString("pt-BR")} atualizadas` : ""} · ${idsNovos.size.toLocaleString("pt-BR")} IDs novos` : " · nenhuma resposta nova neste arquivo (já estava salvo)");
     analyzeNow();
-    return { r, idsNovos };
-  }
+  });
   function analyzeNow() {
     if (!forms) { $("#finfo").textContent = "Suba o Forms para começar."; return; }
     const firstLoad = !A;
@@ -630,124 +570,75 @@
       try { analyzeNow(); } catch (e) { console.error("Falha ao abrir o Forms salvo:", e); $("#finfo").textContent = "Não consegui abrir o Forms salvo (" + (e && e.message || e) + "). Anexe o arquivo de novo."; }
     }
   })().catch(e => console.error(e));
-  // ---------- Forms ao vivo (planilha publicada como CSV) ----------
-  // Busca o CSV publicado a cada 30 s e junta só o que é novo, sem baixar/subir arquivo. O Google atualiza o CSV
-  // publicado com alguns minutos de atraso, então não é instantâneo. Só LÊ: as marcações feitas aqui não voltam para a planilha.
-  const LIVE_DEFAULT = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTTWvTn2sD17nnzOHancBZWx9Thu80bIBUp_EeWMOxKQEiuMdKkDfqiGy63UCun_YzF_MpGKw5T4aiY/pub?output=csv";
-  const LIVE_MS = 30000;
-  let live = (() => { const c = store.get("forms_live", null) || {}; return { url: typeof c.url === "string" && c.url ? c.url : LIVE_DEFAULT, on: c.on !== false, all: c.all !== false }; })();
-  let liveTimer = null, liveBusy = false, liveLast = 0, liveHeavy = false;
-  const xlsxFail = new Map(); // chave da planilha -> motivo (não tenta de novo nesta sessão)
-  const liveKey = u => { const m = /\/spreadsheets\/d\/e\/([\w-]+)\/pub/.exec(u); return m ? m[1] : ""; };
-  const noCache = u => u + (u.includes("?") ? "&" : "?") + "_=" + Date.now();
-  // baixa o .xlsx/.ods publicado (TODAS as abas, como o arquivo anexado) e lê com o mesmo leitor do anexo
-  async function fetchBook(url, ext) {
-    const resp = await fetch(noCache(url), { cache: "no-store" });
-    if (!resp.ok) throw new Error("o Google respondeu " + resp.status);
-    const buf = await resp.arrayBuffer(), b = new Uint8Array(buf.slice(0, 2));
-    if (!(b[0] === 0x50 && b[1] === 0x4B)) throw new Error("o link não devolveu uma planilha"); // .xlsx/.ods são ZIP ("PK")
-    return readForms({ name: "forms-ao-vivo." + ext, arrayBuffer: async () => buf });
-  }
-  async function fetchCsv(url) {
-    const resp = await fetch(noCache(url), { cache: "no-store" });
-    if (!resp.ok) throw new Error("o Google respondeu " + resp.status);
-    const text = await resp.text();
-    if (/^\s*<(!doctype|html)/i.test(text)) throw new Error("o link não devolveu um CSV (confira se está publicado como CSV)");
-    const pr = Papa.parse(text, { header: true, skipEmptyLines: true });
-    lastHeader = (pr.meta && pr.meta.fields) || Object.keys(pr.data[0] || {});
-    if (!pr.data.length) throw new Error("o CSV não tem respostas, só as colunas: " + lastHeader.slice(0, 4).join(", ") + (lastHeader.length > 4 ? "…" : "") + ". Provavelmente é a aba errada: publique a aba das respostas (com ID e VALIDADOR) e cole o novo link");
-    if (!Core.colMap(pr.data).id) throw new Error("não achei a coluna ID nesse CSV (colunas: " + lastHeader.slice(0, 4).join(", ") + "…). Publique a aba certa das respostas");
-    return pr.data;
-  }
-  // lê todos os links do campo (separados por espaço, vírgula ou ;). Para link de planilha publicada, tenta primeiro
-  // o .xlsx do documento inteiro (todas as abas); se o Google não liberar, cai no CSV (só a aba do link).
-  async function liveFetchAll() {
-    const urls = live.url.split(/[\s;,]+/).filter(u => /^https?:/i.test(u));
-    if (!urls.length) throw new Error("cole o link da planilha publicada");
-    const out = []; const done = new Set(); let src = [];
-    for (const u of urls) {
-      const key = liveKey(u), bin = /output=(xlsx|ods)/i.exec(u);
-      // Links com gid/single apontam para uma aba específica e devem ser
-      // lidos diretamente como CSV. Tentar primeiro o XLSX do documento
-      // inteiro nesses links pode retornar uma página 400 do Google e fazer
-      // o Forms ao vivo parecer que não aceitou o endereço.
-      const sheetOnly = /[?&](?:gid|single)=/i.test(u);
-      if (bin) { out.push(...await fetchBook(u, bin[1].toLowerCase())); src.push("todas as abas (" + bin[1].toLowerCase() + ")"); continue; }
-      if (key && live.all && !sheetOnly && !xlsxFail.has(key)) {
-        if (done.has(key)) continue;
-        try { out.push(...await fetchBook(`https://docs.google.com/spreadsheets/d/e/${key}/pub?output=xlsx`, "xlsx")); done.add(key); src.push("todas as abas (xlsx)"); continue; }
-        catch (e) { console.warn("xlsx do documento inteiro indisponível:", e); xlsxFail.set(key, String(e && e.message || e)); }
-      }
-      out.push(...await fetchCsv(u)); src.push(key && live.all ? "só a aba do link (CSV; o Google não liberou todas as abas)" : "CSV (só a aba do link)");
-    }
-    liveHeavy = src.some(x => /xlsx|ods/.test(x));
-    return { rows: out, src: [...new Set(src)].join(" + "), complete: src.every(x => /^todas as abas/.test(x)) };
-  }
-  const saveLive = () => store.set("forms_live", live);
-  const hhmm = () => new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  function liveMsg(t, bad) { const el = $("#fLiveSt"); if (el) { el.textContent = t; el.style.color = bad ? "#b3261e" : ""; } }
-  async function liveSync(manual) {
-    if (liveBusy || !live.url) return;
-    // não troca a lista debaixo de quem está escrevendo/escolhendo numa linha
-    const ae = document.activeElement;
-    if (!manual && ae && ae.closest && ae.closest("#fList") && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) return;
-    liveBusy = true;
+  const LIVE_FORMS_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTTWvTn2sD17nnzOHancBZWx9Thu80bIBUp_EeWMOxKQEiuMdKkDfqiGy63UCun_YzF_MpGKw5T4aiY/pub?output=csv";
+  const liveIdsIn = rows => {
+    const C = Core.colMap(Array.isArray(rows) ? rows : []);
+    return C.id ? rows.flatMap(r => Core.extractIds(r[C.id])) : [];
+  };
+  $("#fLiveRefresh").onclick = async () => {
+    const button = $("#fLiveRefresh"), status = $("#fLiveStatus");
+    if (button.disabled) return;
+    button.disabled = true;
+    button.textContent = "Consultando Forms Ao Vivo…";
+    status.classList.remove("ok", "error");
+    status.textContent = "Buscando os dados publicados no Google Sheets…";
     try {
       await ready;
-      if (!manual && liveHeavy && Date.now() - liveLast < 55000) return; // planilha completa é mais pesada: no máximo 1x por minuto
-      liveLast = Date.now();
-      const got = await liveFetchAll();
-      const pr = { data: got.rows };
-      if (manual) newLiveIds.clear();
-      // A atualização automática pode trazer IDs novos e atualizar a base,
-      // mas nunca move para outra aba os pacotes que estão sendo editados no
-      // Dash. Todos os holds só são liberados com confirmação manual em
-      // “Atualizar agora” (ou ao anexar uma nova planilha).
-      if (manual && Object.keys(heldStatuses).length) clearHeldStatuses();
-      const before = forms ? forms.length : 0;
-      // espelha a planilha: o que foi apagado lá (ou teve o ID trocado) sai do dash; as alterações que você marcou ficam guardadas
-      let removed = 0, warnTxt = "";
-      if (forms && forms.length && pr.data.length) {
-        const pm = Core.pruneMissing(forms, pr.data, !got.complete);
-        const big = pm.removed > 20 && pm.removed > forms.length * 0.5; // proteção: não apaga a maior parte sem confirmar
-        if (pm.removed && (!big || (manual && confirm(`A planilha ao vivo não tem mais ${pm.removed} das ${forms.length} linhas que o dash guardava. Apagar essas ${pm.removed} do dash?`)))) { forms = pm.rows; removed = pm.removed; }
-        else if (pm.removed) warnTxt = ` · ⚠ a planilha veio com ${pm.removed} linhas a menos; não apaguei nada (clique em ↻ Atualizar agora para confirmar)`;
-      }
-      const { r, idsNovos } = ingest(pr.data, "Forms ao vivo");
-      idsNovos.forEach(id => newLiveIds.add(id));
-      if (idsNovos.size) render();
-      // diagnóstico: quantas linhas o CSV trouxe, quantas foram descartadas por ID inválido e qual é a resposta mais recente
-      const ult = A && A.cases.length ? A.cases.reduce((m, c) => ((c.last.ts ? c.last.ts.getTime() : 0) > (m.last.ts ? m.last.ts.getTime() : 0) ? c : m)) : null;
-      const diag = ` · fonte: ${got.src} · ${pr.data.length} linhas${A && A.invalid.length ? ` (${A.invalid.length} sem ID válido)` : ""}${ult ? ` · última: ${fmtDT(ult.last.ts)} ID ${ult.id}` : ""}`;
-      if (r.added || r.updated || removed || !before) {
-        liveMsg(`✓ ${hhmm()} · +${r.added} novas · ${r.updated} atualizadas${removed ? ` · −${removed} apagadas da planilha` : ""}${diag}${warnTxt}`, !!warnTxt);
-        if (r.added) toast(`Forms ao vivo: +${r.added} resposta${r.added > 1 ? "s" : ""} nova${r.added > 1 ? "s" : ""} (${idsNovos.size} ID${idsNovos.size === 1 ? "" : "s"} novo${idsNovos.size === 1 ? "" : "s"}).`);
-      } else liveMsg(`✓ ${hhmm()} · sem novidades${diag}${warnTxt}`, !!warnTxt);
-    } catch (e) {
-      console.error(e);
-      liveMsg(`✕ ${hhmm()} · não consegui buscar (${e && e.message || e}). Tento de novo em 30 s.`, true);
-    } finally { liveBusy = false; }
-  }
-  function liveApply() {
-    clearInterval(liveTimer); liveTimer = null;
-    const b = $("#fLiveBtn"); if (b) { b.textContent = live.on ? "⏸ Desligar ao vivo" : "▶ Ligar ao vivo"; b.classList.toggle("pri", live.on); }
-    if (live.on) { liveTimer = setInterval(() => liveSync(false), LIVE_MS); liveSync(true); } else liveMsg("Desligado. O Forms continua como estava; anexe um arquivo ou ligue de novo.");
-  }
-  if ($("#fLiveUrl")) {
-    $("#fLiveUrl").value = live.url;
-    $("#fLiveUrl").onchange = e => { live.url = e.target.value.trim(); saveLive(); if (live.on) liveSync(true); };
-    $("#fLiveAll").checked = live.all;
-    $("#fLiveAll").onchange = e => { live.all = e.target.checked; xlsxFail.clear(); saveLive(); if (live.on) liveSync(true); };
-    $("#fLiveBtn").onclick = () => { live.on = !live.on; saveLive(); liveApply(); };
-    $("#fLiveNow").onclick = () => liveSync(true);
-    liveApply();
-  }
+      const url = new URL(LIVE_FORMS_CSV_URL);
+      url.searchParams.set("_", String(Date.now()));
+      const response = await fetch(url.toString(), { cache: "no-store", headers: { Accept: "text/csv" } });
+      if (!response.ok) throw new Error(`o Google respondeu HTTP ${response.status}`);
+      const csvText = await response.text();
+      if (!csvText.trim()) throw new Error("o CSV retornou vazio");
+      const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+      const fields = (parsed.meta && parsed.meta.fields) || Object.keys((parsed.data && parsed.data[0]) || {});
+      if (!fields.length || !Array.isArray(parsed.data)) throw new Error("o link não retornou uma planilha CSV válida");
+      const fatal = (parsed.errors || []).find(e => e.type === "Quotes" || e.type === "Delimiter");
+      if (fatal) throw new Error(`CSV inválido na linha ${Number(fatal.row || 0) + 1}: ${fatal.message}`);
 
+      const sourceRows = parsed.data.filter(r => r && Object.values(r).some(v => String(v ?? "").trim() !== ""));
+      const emptyGeneratedColumns = new Set(fields.filter(field =>
+        /^COLUNA\d+$/.test(N(field)) && sourceRows.every(r => !String(r[field] ?? "").trim())
+      ));
+      const canonical = new Map();
+      for (const h of allHdrs()) if (!canonical.has(N(h))) canonical.set(N(h), h);
+      const records = sourceRows.map(source => {
+        const row = {};
+        for (const field of fields) {
+          if (emptyGeneratedColumns.has(field)) continue;
+          const key = canonical.get(N(field)) || String(field).trim() || field;
+          row[key] = source[field] ?? "";
+        }
+        return row;
+      }).filter(r => Object.values(r).some(v => String(v ?? "").trim() !== ""));
+      const C = Core.colMap(records);
+      if (!C.id) throw new Error("não encontrei a coluna ID na posição esperada do Forms");
+      const validIdCount = records.filter(r => Core.extractIds(r[C.id]).length).length;
+      if (!validIdCount) throw new Error("não encontrei respostas com ID válido no CSV publicado");
+
+      const idsAntes = new Set(liveIdsIn(forms));
+      const pendentesAntes = new Set((A?.cases || []).filter(c => c.status === "PENDENTE" && !isHiddenCase(c)).map(c => c.id));
+      const merged = mergeForms(records, true);
+      analyzeNow();
+      const idsNovos = new Set(liveIdsIn(forms).filter(id => !idsAntes.has(id)));
+      const novosAValidar = (A?.cases || []).filter(c => c.status === "PENDENTE" && !isHiddenCase(c) && !pendentesAntes.has(c.id)).length;
+      const hora = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      const alteracoes = merged.added || merged.updated
+        ? `+${merged.added.toLocaleString("pt-BR")} respostas novas · ${merged.updated.toLocaleString("pt-BR")} atualizadas · ${idsNovos.size.toLocaleString("pt-BR")} IDs novos`
+        : "sem respostas novas · 0 IDs novos";
+      const avisos = (parsed.errors || []).length ? ` · ${parsed.errors.length.toLocaleString("pt-BR")} avisos no CSV` : "";
+      status.classList.add("ok");
+      status.textContent = `Atualizado às ${hora} · ${records.length.toLocaleString("pt-BR")} respostas lidas · ${alteracoes} · +${novosAValidar.toLocaleString("pt-BR")} novos em A validar${avisos}`;
+    } catch (e) {
+      console.error("Falha ao atualizar Forms Ao Vivo:", e);
+      status.classList.add("error");
+      status.textContent = `Falha ao atualizar Forms Ao Vivo: ${e.message || e}`;
+    } finally {
+      button.disabled = false;
+      button.textContent = "↻ Atualizar Forms Ao Vivo";
+    }
+  };
   function reanalyze() {
-    // Reconstitui os holds depois de qualquer recálculo da tela ou atualização
-    // automática, evitando que a troca de aba faça um pacote desaparecer.
-    for (const id of Object.keys(edits)) if (edits[id] && edits[id].hold !== undefined) heldStatuses[id] = edits[id].hold;
-    saveHeldStatuses();
     A = analyze(forms, edits);
     store.set("forms_edits", edits);
     byId = new Map(A.cases.map(c => [c.id, c]));
@@ -762,50 +653,43 @@
   const matches = (c, skip) => {
     if (isHiddenCase(c)) return false;
     // Uma busca explícita deve encontrar o pacote independentemente da situação selecionada.
-    if (!S.q && skip !== "st" && S.st !== "TODOS" && shownStatus(c) !== S.st) return false;
+    if (!S.q && skip !== "st" && S.st !== "TODOS" && c.status !== S.st) return false;
     if (skip !== "reg" && S.reg.size && !S.reg.has(c.regiao)) return false;
     if (skip !== "val" && S.val.size && !S.val.has(valOf(c))) return false;
-    // na aba "A validar" entram os pendentes de TODOS os dias: o que ainda não foi validado não some ao trocar/abrir em outra data
-    if (S.dt !== "TUDO" && c.dia !== S.dt && !(S.st === "PENDENTE" && shownStatus(c) === "PENDENTE")) return false;
+    if (S.dt !== "TUDO" && c.dia !== S.dt) return false;
     if (S.q) {
-      const q = N(S.q), hay = N([c.id, c.idShow, c.code, c.regiao, c.status, c.last.motorista, c.last.focal, c.last.motivo, c.last.motRecusa, c.last.validador, ...c.recusaMotivos].join(" "));
+      const q = N(S.q), hay = N([c.id, c.code, c.regiao, c.status, c.last.motorista, c.last.focal, c.last.motivo, c.last.motRecusa, c.last.validador, ...c.recusaMotivos].join(" "));
       if (!hay.includes(q)) return false;
     }
     return true;
   };
+  const rowTime = c => c.last?.ts instanceof Date ? c.last.ts.getTime() : 0;
+  const rowIndex = c => Number.isFinite(c.last?.i) ? c.last.i : 0;
+  const chronological = (a, b) => rowTime(a) - rowTime(b) || rowIndex(a) - rowIndex(b);
+  const reverseChronological = (a, b) => rowTime(b) - rowTime(a) || rowIndex(a) - rowIndex(b);
   const sorters = {
-    rec: (a, b) => b.recusas - a.recusas || (a.last.ts || 0) - (b.last.ts || 0) || a.last.i - b.last.i,
-    old: (a, b) => (a.last.ts || 0) - (b.last.ts || 0) || a.last.i - b.last.i, // ordem da planilha do Forms
-    new: (a, b) => (b.last.ts || 0) - (a.last.ts || 0) || b.last.i - a.last.i,
-    base: (a, b) => (a.code || "~").localeCompare(b.code || "~", "pt-BR", { numeric: true }) || (a.last.ts || 0) - (b.last.ts || 0) || a.last.i - b.last.i
+    rec: (a, b) => b.recusas - a.recusas || chronological(a, b),
+    old: chronological,
+    new: reverseChronological,
+    base: (a, b) => (a.code || "~").localeCompare(b.code || "~", "pt-BR", { numeric: true }) || chronological(a, b)
   };
 
-  // na aba Recusadas a lista vem do mais recente para o mais antigo (data/hora do último envio)
-  // "Todas" fica na ordem da tabela do Forms (mais antigo → mais novo); a cópia para o Forms sempre sai nessa ordem, qualquer que seja a aba
-  const sorterNow = () => S.st === "RECUSADA" ? sorters.new : S.st === "TODOS" ? sorters.old : sorters[S.sort];
-  const idTxt = c => c.realId || (c.semId ? c.idShow : c.id);
-  const currentList = () => A.cases.filter(c => matches(c)).sort((a, b) => {
-    const an = newLiveIds.has(a.id), bn = newLiveIds.has(b.id);
-    if (an !== bn) return an ? -1 : 1;
-    return sorterNow()(a, b);
-  });
+  const currentList = () => A.cases.filter(c => matches(c)).sort(sorters[S.sort] || sorters.old);
   function render() { if (!statusTabs().some(t => t[0] === S.st)) S.st = "TODOS"; const list = currentList(); renderTop(list); renderList(list); }
   function renderTop(list) {
     // Os números dos cartões e dos filtros acompanham a data selecionada.
-    const allDay = (S.dt === "TUDO" ? A.cases : A.cases.filter(c => c.dia === S.dt)).filter(c => !isHiddenCase(c)), reg = S.reg;
-    const pendAll = A.cases.filter(c => shownStatus(c) === "PENDENTE" && !isHiddenCase(c)); // pendentes de todos os dias
-    const all = S.st === "PENDENTE" ? [...new Map([...allDay, ...pendAll].map(c => [c.id, c])).values()] : allDay;
+    const all = (S.dt === "TUDO" ? A.cases : A.cases.filter(c => c.dia === S.dt)).filter(c => !isHiddenCase(c)), reg = S.reg;
     const nHid = A.cases.filter(isHiddenCase).length, ub = $("#fUnhide");
     if (ub) { ub.hidden = !nHid; ub.textContent = `👁 Mostrar ocultos (${nHid})`; }
     const valOk = c => !S.val.size || S.val.has(valOf(c));
     const inReg = all.filter(c => (!reg.size || reg.has(c.regiao)) && valOk(c));
     const cnt = (fn, l = inReg) => l.filter(fn).length;
-    const responseCount = S.dt === "TUDO" ? A.rowsTotal : all.filter(c => !c.extra).reduce((n, c) => n + c.att.filter(a => dayKey(a.ts) === S.dt).length, 0);
+    const responseCount = S.dt === "TUDO" ? A.rowsTotal : all.reduce((n, c) => n + c.att.filter(a => dayKey(a.ts) === S.dt).length, 0);
     $("#fkpi").innerHTML = [
-      ["IDs únicos", inReg.filter(c => !c.extra).length, `${responseCount.toLocaleString("pt-BR")} respostas no Forms`],
-      ["A validar", pendAll.filter(c => (!reg.size || reg.has(c.regiao)) && valOk(c)).length, "sem status (todos os dias)"],
-      ["Recusadas", cnt(c => shownStatus(c) === "RECUSADA"), "última resposta = recusada"],
-      ["Reincidentes", cnt(c => c.recusas >= 2 && !c.extra), "recusados 2× ou mais"],
+      ["IDs únicos", inReg.length, `${responseCount.toLocaleString("pt-BR")} respostas no Forms`],
+      ["A validar", cnt(c => c.status === "PENDENTE"), "último envio sem status"],
+      ["Recusadas", cnt(c => c.status === "RECUSADA"), "última resposta = recusada"],
+      ["Reincidentes", cnt(c => c.recusas >= 2), "recusados 2× ou mais"],
       ["Alterados por você", all.filter(c => c.last.edited).length, "entram no BAIXAR FORMS"]
     ].map(([t, v, s]) => `<div class="k"><small>${t}</small><div>${v.toLocaleString("pt-BR")}</div><em>${s}</em></div>`).join("");
 
@@ -826,7 +710,7 @@
     const extras = [...new Set(all.map(valOf))].filter(v => v !== SEM_VAL && !VALIDADORES.includes(v)).sort();
     const vnames = [...VALIDADORES, ...extras, SEM_VAL];
     $("#fVal").innerHTML = `<button data-v="TODOS" class="${!S.val.size ? "on" : ""}">Todos <i>${vbase.length}</i></button>` +
-      vnames.map(v => { const n = vbase.filter(c => valOf(c) === v).length; const on = S.val.has(v); return n || on || VALIDADORES.includes(v) ? `<button data-v="${esc(v)}" class="${on ? "on" : ""}">${on ? "✓ " : ""}${valColor(v) ? `<u class="vdot" style="background:${valColor(v)}"></u>` : ""}${esc(v)} <i>${n}</i></button>` : ""; }).join("");
+      vnames.map(v => { const n = vbase.filter(c => valOf(c) === v).length; const on = S.val.has(v); return n || on || VALIDADORES.includes(v) ? `<button data-v="${esc(v)}" class="${on ? "on" : ""}">${on ? "✓ " : ""}${esc(v)} <i>${n}</i></button>` : ""; }).join("");
     $("#fVal").querySelectorAll("button").forEach(b => b.onclick = () => {
       const v = b.dataset.v;
       if (v === "TODOS") S.val.clear(); else if (S.val.has(v)) S.val.delete(v); else S.val.add(v);
@@ -834,13 +718,13 @@
     });
 
     $("#fSt").innerHTML = statusTabs().map(([k, t]) => {
-      const n = (k === "PENDENTE" ? pendAll : allDay).filter(c => (!S.reg.size || S.reg.has(c.regiao)) && valOk(c) && (k === "TODOS" || shownStatus(c) === k)).length;
+      const n = all.filter(c => (!S.reg.size || S.reg.has(c.regiao)) && valOk(c) && (k === "TODOS" || c.status === k)).length;
       const on = S.st === k;
       return `<button data-s="${esc(k)}" class="${on ? "on" : ""}"${stStyle(k, on ? "tabOn" : "tab")}>${esc(t)} <i>${n}</i></button>`;
     }).join("");
     $("#fSt").querySelectorAll("button").forEach(b => b.onclick = () => { S.st = b.dataset.s; S.limit = 100; OPEN.fSt = false; render(); });
     // botões minimizados: mostram só a escolha atual; clicando abre as opções
-    const nSt = (S.st === "PENDENTE" ? pendAll : allDay).filter(c => (!S.reg.size || S.reg.has(c.regiao)) && valOk(c) && (S.st === "TODOS" || shownStatus(c) === S.st)).length;
+    const nSt = all.filter(c => (!S.reg.size || S.reg.has(c.regiao)) && valOk(c) && (S.st === "TODOS" || c.status === S.st)).length;
     const tog = (id, txt, n, act) => { const t = $("#" + id + "T"); t.innerHTML = `${esc(txt)} <i>${n}</i> <span class="car">▾</span>`; t.classList.toggle("act", act); };
     tog("fReg", reg.size ? [...reg].join(" + ") : "Todas", reg.size ? base.filter(c => reg.has(c.regiao)).length : base.length, reg.size > 0);
     tog("fVal", S.val.size ? [...S.val].join(" + ") : "Todos", S.val.size ? vbase.filter(c => S.val.has(valOf(c))).length : vbase.length, S.val.size > 0);
@@ -861,10 +745,9 @@
   }
 
   function rowHtml(c) {
-    const L = c.last, u = c.evidUrls && c.evidUrls.length ? c.evidUrls : L.urls;
-    const novo = newLiveIds.has(c.id) ? " · NOVO" : "";
+    const L = c.last, u = L.urls;
     const rec = c.recusas === 0 ? "" : `<span class="rec ${c.recusas >= 3 ? "r3" : c.recusas === 2 ? "r2" : "r1"}">${c.recusas >= 3 ? "⚠ " : ""}${c.recusas}× recusada</span>`;
-    const caso = `<div class="lgbox"><small>Abrir Logistic</small><div class="lgpair"><a class="btn pri" target="_blank" rel="noopener" href="${LOGISTIC_URL}" data-lg="${esc(idTxt(c))}" title="Copia o ID e abre o Logistic no navegador normal">🌐 Normal ↗</a><button type="button" class="btn lgan" data-lga="${c.id}" title="Copia o link do Logistic para colar numa janela anônima">🕶 Anônimo</button></div></div>`;
+    const caso = `<div class="lgbox"><small>Abrir Logistic</small><div class="lgpair"><a class="btn pri" target="_blank" rel="noopener" href="${LOGISTIC_URL}" data-lg="${c.id}" title="Copia o ID e abre o Logistic no navegador normal">🌐 Normal ↗</a><button type="button" class="btn lgan" data-lga="${c.id}" title="Copia o link do Logistic para colar numa janela anônima">🕶 Anônimo</button></div></div>`;
     // Mensagens da aba "Mensagem Logistic" direto na linha: um clique copia a mensagem
     const msgTrat = `<div class="lgbox msgbox"><small>Mensagem Logistic</small><div class="msgchips">${MSGS.map(([t, m], i) => `<button type="button" class="mini msgchip" data-msgc="${i}" title="${esc(m)}">${esc(t)}</button>`).join("")}</div></div>`;
     const evid = u.length ? `<div class="fotos"><a class="btn ph" target="_blank" rel="noopener" href="${esc(u[0])}" title="Abrir a foto no Drive">📷 Ver foto</a>${u.slice(1).map((x, i) => `<a class="btn sm" target="_blank" rel="noopener" href="${esc(x)}" title="Abrir a foto ${i + 2}">📷 ${i + 2}</a>`).join("")}</div>` : (L.evid ? `<span class="mu" title="${esc(L.evid)}">arquivo sem link</span>` : "");
@@ -873,12 +756,12 @@
     const extra = c.status !== "PENDENTE" && !SEL.some(x => x[0] === c.status) ? `<option value="${esc(c.status)}" selected>${esc(c.status)}</option>` : "";
     const sel = `<select class="stsel" data-sel="${c.id}" data-s="${esc(c.status)}"${stStyle(c.status, "sel")} title="Marcar o status deste pacote">${orig === "PENDENTE" ? `<option value=""${c.status === "PENDENTE" ? " selected" : ""}>— A validar —</option>` : ""}${SEL.map(([v, t]) => `<option value="${v}"${c.status === v ? " selected" : ""}>${t}</option>`).join("")}${extra}</select>`;
     const vNow = L.validador || "", vExtra = vNow && !VALIDADORES.some(v => N(v) === N(vNow)) ? `<option value="${esc(vNow)}" selected>${esc(vNow)}</option>` : "";
-    const vsel = `<select class="valsel" data-val="${c.id}" data-v="${esc(N(vNow))}"${valStyle(vNow)} title="Quem validou este pacote">${vNow ? "" : '<option value="" selected>— Validador —</option>'}${VALIDADORES.map(v => `<option value="${v}"${N(v) === N(vNow) ? " selected" : ""}>${v}</option>`).join("")}${vExtra}</select>`;
-    const mr = hasDesc(c.status) ? `<input class="mr" data-mr="${c.id}" placeholder="${descLabel(c.status)} (escreva aqui)" value="${esc(L.motRecusa)}">` : "";
-    const hist = `<div class="h hh">${c.recusas}× recusada neste ID · ${c.tent} envio${c.tent > 1 ? "s" : ""}</div>` + c.att.map((a, ix) => ({ a, ix })).reverse().map(({ a, ix }) => `<div class="h"><span>${fmtDT(a.ts)}</span>${a.validador && valStyle(a.validador) ? `<span class="bd"${valStyle(a.validador)}>${esc(a.validador)}</span>` : `<span>${esc(a.validador) || "—"}</span>`}<span class="bd ${BADGE[a.status] || ""}"${stStyle(a.status, "badge")}>${esc(badge(a.status))}</span><span>${esc(prettyMotivo(a.motivo)) || "—"}</span>${a.urls.length ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(a.urls[0])}" title="Abrir a foto desse envio">📷</a>` : ""}${a.motRecusa ? `<em>${descLabel(a.status)}: ${esc(a.motRecusa)}</em>` : ""}</div>`).join("");
+    const vsel = `<select class="valsel" data-val="${c.id}" data-v="${esc(N(vNow))}" title="Quem validou este pacote">${vNow ? "" : '<option value="" selected>— Validador —</option>'}${VALIDADORES.map(v => `<option value="${v}"${N(v) === N(vNow) ? " selected" : ""}>${v}</option>`).join("")}${vExtra}</select>`;
+    const mr = ["RECUSADA", "NÃO SUBIR"].includes(c.status) ? `<input class="mr" data-mr="${c.id}" placeholder="${c.status === "NÃO SUBIR" ? "Motivo da análise (escreva aqui)" : "Motivo da recusa (escreva aqui)"}" value="${esc(L.motRecusa)}">` : "";
+    const hist = `<div class="h hh">${c.recusas}× recusada neste ID · ${c.tent} envio${c.tent > 1 ? "s" : ""}</div>` + c.att.map((a, ix) => ({ a, ix })).reverse().map(({ a, ix }) => `<div class="h"><span>${fmtDT(a.ts)}</span><span>${esc(a.validador) || "—"}</span><span class="bd ${BADGE[a.status] || ""}"${stStyle(a.status, "badge")}>${esc(badge(a.status))}</span><span>${esc(prettyMotivo(a.motivo)) || "—"}</span>${a.urls.length ? `<a class="btn sm" target="_blank" rel="noopener" href="${esc(a.urls[0])}" title="Abrir a foto desse envio">📷</a>` : ""}${a.motRecusa ? `<em>Motivo da recusa: ${esc(a.motRecusa)}</em>` : ""}</div>`).join("");
     return `<div class="fr${c.recusas >= 2 ? " hot" : ""}${L.edited ? " ed" : ""}${c.id === tratando ? " trat" : ""}${selectedIds.has(c.id) ? " selected" : ""}" data-id="${c.id}">
-  <div class="c1"><b class="idv"${c.semId ? ' title="Esta resposta veio sem ID de 11 dígitos"' : ""}>${esc(idTxt(c))}</b><button class="mini" data-cp="${esc(idTxt(c))}" title="Copiar ID">⧉</button><button class="mini remove-id" data-remove="${c.id}" title="Ocultar este ID: some da lista e não entra na cópia nem no BAIXAR FORMS">✕</button><div class="mu">${c.extra ? "↺ envio anterior do mesmo ID, ainda sem validar · " : ""}${c.semId ? "⚠ sem ID válido · " : ""}${c.code ? esc(c.code) + " · " : ""}${esc(c.regiao)}${c.lote ? " · enviado em lote" : ""}</div>${L.focal ? `<div class="mu focal">Focal: ${esc(L.focal)}</div>` : ""}<button class="mini cpall" data-cpall="${c.id}" title="Copiar mensagem completa">⧉ Copiar mensagem ID, base e focal</button></div>
-  <div class="c2">${sel} ${rec}${L.edited ? ' <span class="edtag">✎ editado</span>' : ""}<div class="vrow">${vsel}</div><div class="mu">${c.tent} envio${c.tent > 1 ? "s" : ""} · último ${fmtDT(L.ts)}${novo}</div></div>
+  <div class="c1"><b class="idv">${c.id}</b><button class="mini" data-cp="${c.id}" title="Copiar ID">⧉</button><button class="mini remove-id" data-remove="${c.id}" title="Ocultar este ID: some da lista e não entra na cópia nem no BAIXAR FORMS">✕</button><div class="mu">${c.code ? esc(c.code) + " · " : ""}${esc(c.regiao)}${c.lote ? " · enviado em lote" : ""}</div>${L.focal ? `<div class="mu focal">Focal: ${esc(L.focal)}</div>` : ""}<button class="mini cpall" data-cpall="${c.id}" title="Copiar mensagem completa">⧉ Copiar mensagem ID, base e focal</button></div>
+  <div class="c2">${sel} ${rec}${L.edited ? ' <span class="edtag">✎ editado</span>' : ""}<div class="vrow">${vsel}</div><div class="mu">${c.tent} envio${c.tent > 1 ? "s" : ""} · último ${fmtDT(L.ts)}</div></div>
   <div class="c3"><div class="mot" title="${esc(L.motivo)}">${esc(prettyMotivo(L.motivo)) || "—"}</div><div class="mu">Motorista: ${esc(L.motorista) || "—"}</div>${c.id === tratando ? tratTag(c.id) : ""}${mr}</div>
   <div class="c4">${caso}${msgTrat}${evid}${c.tent > 1 ? `<button class="mini" data-h="${c.id}">Histórico (${c.tent})</button>` : ""}</div>
   <div class="hist" hidden>${hist}</div>
@@ -985,7 +868,7 @@
       const c = byId.get(t.dataset.cpall), L = c ? c.last : null;
       if (c) {
         const parts = [c.code || L.baseRaw, L.focal].filter(Boolean);
-        copy(`🚨 ID: ${idTxt(c)}${parts.length ? " - " + parts.join(" - ") : ""}\nPor favor, reenviar evidência.`);
+        copy(`🚨 ID: ${c.id}${parts.length ? " - " + parts.join(" - ") : ""}\nPor favor, reenviar evidência.`);
         flash(t, "✓ copiado");
       }
     }
@@ -1000,7 +883,7 @@
   const tOf = c => (c.last.ts ? c.last.ts.getTime() : 0);
   const curEdit = c => (edits[c.id] && edits[c.id].t === tOf(c) ? edits[c.id] : { t: tOf(c) });
   function keepEdit(c, ed) {
-    if (ed.s === undefined && ed.m === undefined && ed.v === undefined && ed.hold === undefined) delete edits[c.id]; else { ed.at = Date.now(); edits[c.id] = ed; } // 'at' = quando você mexeu (usado no BAIXAR FORMS)
+    if (ed.s === undefined && ed.m === undefined && ed.v === undefined) delete edits[c.id]; else { ed.at = Date.now(); edits[c.id] = ed; } // 'at' = quando você mexeu (usado no BAIXAR FORMS)
     store.set("forms_edits", edits);
   }
   function saveReason(el, final) {
@@ -1022,13 +905,7 @@
     } else {
       if (el.value === "" || normStatus(el.value) === orig) { delete ed.s; delete ed.os; }
       else { ed.s = el.value; ed.os = orig; }
-      if (!hasDesc(ed.s ? normStatus(ed.s) : orig)) { delete ed.m; delete ed.om; }
-      // Mantém a linha na situação que estava sendo trabalhada até o próximo
-      // Forms ao vivo. Na próxima sincronização o hold é limpo e o pacote
-      // segue para a aba do novo status.
-      if (el.value && normStatus(el.value) !== orig) { heldStatuses[c.id] = orig; ed.hold = orig; }
-      else { delete heldStatuses[c.id]; delete ed.hold; }
-      saveHeldStatuses();
+      if (!["RECUSADA", "NÃO SUBIR"].includes(ed.s ? normStatus(ed.s) : orig)) { delete ed.m; delete ed.om; }
     }
     keepEdit(c, ed); reanalyze();
     // troca só essa linha (ela continua na lista até você mudar o filtro) e atualiza os contadores
@@ -1044,7 +921,7 @@
   $("#fQ").oninput = e => { S.q = e.target.value; S.limit = 100; A && render(); };
   $("#fMore").onclick = () => { S.limit += 100; render(); };
   $("#fCopyIds").onclick = e => {
-    const ids = A.cases.filter(c => matches(c)).sort(sorterNow()).map(c => idTxt(c));
+    const ids = A.cases.filter(c => matches(c)).sort(sorters[S.sort]).map(c => c.id);
     copy(ids.join("\n")); flash(e.target, `✓ ${ids.length} IDs copiados`);
   };
   // print da lista atual (status + regionais marcadas)
@@ -1070,15 +947,9 @@
     const list = [["PENDENTE", "A VALIDAR", 0], ["RECUSADA", "RECUSADA", 0], ["ANEXADA", "ANEXADA", 0], ["ANULADA", "ANULADA", 0], ["FATURADA", "FATURADA", 0], ["NÃO SUBIR", "EM ANALISE", 0], ...extraStatuses().map(x => [x, x, 1])];
     const rows = list.map(([k, t, ex]) => {
       const c = stColor(k), nCases = A ? A.cases.filter(z => z.status === k).length : 0;
-      const fixo = DESC_FIXED.has(k);
-      return `<div class="frow"><span class="bd" style="background:${c};color:${textOn(c)};min-width:120px;text-align:center">${esc(t)}</span><input type="color" data-stc="${esc(k)}" value="${c}" title="Escolher a cor"><label class="chk" title="${fixo ? "Este status já tem campo para escrever o motivo" : "Mostra um campo para escrever a descrição neste status"}"><input type="checkbox" data-stdesc="${esc(k)}"${hasDesc(k) ? " checked" : ""}${fixo ? " disabled" : ""}> Descrição</label><span class="mu">${ex ? (stCfg.custom.includes(k) ? "criado aqui" : "veio no arquivo") : "padrão"} · ${nCases} pacote${nCases === 1 ? "" : "s"}</span>${ex && stCfg.custom.includes(k) ? `<button type="button" class="mini" data-stdel="${esc(k)}" title="Remover este status criado aqui">✕</button>` : ""}</div>`;
+      return `<div class="frow"><span class="bd" style="background:${c};color:${textOn(c)};min-width:120px;text-align:center">${esc(t)}</span><input type="color" data-stc="${esc(k)}" value="${c}" title="Escolher a cor"><span class="mu">${ex ? (stCfg.custom.includes(k) ? "criado aqui" : "veio no arquivo") : "padrão"} · ${nCases} pacote${nCases === 1 ? "" : "s"}</span>${ex && stCfg.custom.includes(k) ? `<button type="button" class="mini" data-stdel="${esc(k)}" title="Remover este status criado aqui">✕</button>` : ""}</div>`;
     }).join("");
-    const vnames = [...new Set([...VALIDADORES, ...(A ? A.cases.map(valOf) : [])])].filter(v => v !== SEM_VAL);
-    const vrows = vnames.map(v => {
-      const c = valColor(v) || "#6b7a99", n = A ? A.cases.filter(z => valOf(z) === v).length : 0;
-      return `<div class="frow"><span class="bd" style="background:${c};color:${textOn(c)};min-width:120px;text-align:center">${esc(v)}</span><input type="color" data-vc="${esc(N(v))}" value="${c}" title="Escolher a cor deste validador"><span class="mu">${VALIDADORES.includes(v) ? "lista fixa" : "veio no arquivo"} · ${n} pacote${n === 1 ? "" : "s"}</span></div>`;
-    }).join("");
-    return `<div class="dbox"><h2>🎨 Status e cores</h2><p class="mu">Qualquer status novo que aparecer na coluna <b>STATUS DA EVIDÊNCIA</b> do arquivo já entra sozinho (aba, seletor e cor). O arquivo baixado do Forms não leva a cor dos chips, por isso a cor se escolhe aqui e fica salva neste navegador. Marque <b>Descrição</b> num status para ele ter o campo de motivo por escrito, igual ao RECUSADA.</p><h3 class="stsec">Status</h3>${rows}<div class="frow"><input id="stNew" type="text" maxlength="40" placeholder="Novo status (ex.: REENVIAR PRINT)"><input id="stNewC" type="color" value="#6b7a99"><label class="chk"><input id="stNewD" type="checkbox"> Adicionar descrição</label><button id="stAdd" class="pri" type="button">＋ Adicionar</button></div><h3 class="stsec">Validadores</h3>${vrows}<div class="frow"><button id="stReset" type="button">Restaurar cores padrão</button><button id="stClose" type="button">Fechar ✕</button></div></div>`;
+    return `<div class="dbox"><h2>🎨 Status e cores</h2><p class="mu">Qualquer status novo que aparecer na coluna <b>STATUS DA EVIDÊNCIA</b> do arquivo já entra sozinho (aba, seletor e cor). O arquivo baixado do Forms não leva a cor dos chips, por isso a cor se escolhe aqui e fica salva neste navegador.</p>${rows}<div class="frow"><input id="stNew" type="text" maxlength="40" placeholder="Novo status (ex.: EM REVISÃO)"><input id="stNewC" type="color" value="#6b7a99"><button id="stAdd" class="pri" type="button">＋ Adicionar</button></div><div class="frow"><button id="stReset" type="button">Restaurar cores padrão</button><button id="stClose" type="button">Fechar ✕</button></div></div>`;
   }
   function openStCfg() {
     let ov = $("#stcfg");
@@ -1089,8 +960,8 @@
       ov.addEventListener("click", e => {
         if (e.target === ov || e.target.id === "stClose") { ov.hidden = true; return; }
         const del = e.target.closest("[data-stdel]");
-        if (del) { const k = del.dataset.stdel; stCfg.custom = stCfg.custom.filter(x => x !== k); delete stCfg.colors[k]; delete stCfg.desc[k]; apply(); return; }
-        if (e.target.id === "stReset") { stCfg.colors = {}; stCfg.valColors = {}; apply(); return; }
+        if (del) { const k = del.dataset.stdel; stCfg.custom = stCfg.custom.filter(x => x !== k); delete stCfg.colors[k]; apply(); return; }
+        if (e.target.id === "stReset") { stCfg.colors = {}; apply(); return; }
         if (e.target.id === "stAdd") {
           const raw = ($("#stNew").value || "").trim();
           if (!raw) { toast("Digite o nome do novo status."); return; }
@@ -1098,15 +969,10 @@
           if (BUILTIN_ST.has(nome)) { toast("Esse status já existe na lista padrão."); return; }
           if (!stCfg.custom.includes(nome)) stCfg.custom.push(nome);
           stCfg.colors[nome] = $("#stNewC").value;
-          if ($("#stNewD").checked) stCfg.desc[nome] = true; else delete stCfg.desc[nome];
           apply(); toast(`Status “${nome}” adicionado. Ele já aparece na aba e no seletor de cada pacote.`);
         }
       });
-      ov.addEventListener("change", e => {
-        const i = e.target.closest("[data-stc]"); if (i) { stCfg.colors[i.dataset.stc] = i.value; apply(); return; }
-        const d = e.target.closest("[data-stdesc]"); if (d) { if (d.checked) stCfg.desc[d.dataset.stdesc] = true; else delete stCfg.desc[d.dataset.stdesc]; apply(); return; }
-        const v = e.target.closest("[data-vc]"); if (v) { stCfg.valColors[v.dataset.vc] = v.value; apply(); }
-      });
+      ov.addEventListener("change", e => { const i = e.target.closest("[data-stc]"); if (i) { stCfg.colors[i.dataset.stc] = i.value; apply(); } });
     }
     refill(); ov.hidden = false;
   }
