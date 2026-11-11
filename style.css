@@ -57,12 +57,16 @@ tr.tot td{font-weight:700;border-top:2px solid var(--ac)}
 .form-nav{margin:8px 0 16px;padding-bottom:8px}
 .form-nav button{padding:7px 14px;font-size:14px}
 .mu{color:var(--mu);font-size:12px}
-.live-refresh{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 12px;padding:12px 14px;background:var(--sf);border:1px solid var(--ln);border-radius:10px}
-.live-refresh button{flex:0 0 auto;font-weight:700}
-.live-refresh button:disabled{opacity:.65;cursor:wait}
-#fLiveStatus{flex:1;min-width:220px;font-size:13px}
+.live-refresh{display:grid;grid-template-columns:minmax(220px,1fr) auto;align-items:end;gap:10px 14px;margin:0 0 12px;padding:12px 14px;background:var(--sf);border:1px solid var(--ln);border-radius:10px}
+.live-url-label{display:flex;flex-direction:column;gap:6px;min-width:0;font-size:13px;font-weight:700}
+.live-url-label input{width:100%;min-width:0;box-sizing:border-box;font:inherit;font-weight:400;color:var(--tx);background:var(--bg);border:1px solid var(--ln);border-radius:8px;padding:8px 10px}
+.live-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.live-actions button{flex:0 0 auto;font-weight:700}
+.live-actions button:disabled{opacity:.65;cursor:wait}
+#fLiveStatus{grid-column:1/-1;min-width:0;font-size:13px}
 #fLiveStatus.ok{color:var(--ac);font-weight:600}
 #fLiveStatus.error{color:#b3261e;font-weight:600}
+@media(max-width:780px){.live-refresh{grid-template-columns:1fr}.live-actions button{flex:1 1 auto}}
 
 /* ===== Análise Forms ===== */
 #fkpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:14px 0}

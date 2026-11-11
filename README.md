@@ -20,7 +20,7 @@ O **validador do Forms tem prioridade**: ao baixar/subir o Forms de novo, se a r
 
 **Novidades (nov/2026)**
 - O Forms fica salvo no navegador (IndexedDB, sem o limite de ~5 MB do localStorage). Ao abrir, a Análise Forms já mostra a lista; a caixa de anexar fica pequena e só precisa ser usada quando houver informações novas.
-- **Forms Ao Vivo:** o botão **↻ Atualizar Forms Ao Vivo** consulta a planilha CSV somente quando clicado, mescla as respostas com os dados salvos e informa quantas respostas/IDs novos e quantos pacotes novos em **A validar** chegaram. Não há consulta automática em segundo plano. O anexo manual .ods/.xlsx/.csv continua igual.
+- **Forms Ao Vivo:** cole ou edite o link publicado em CSV no campo **Link do Forms Ao Vivo** e clique **Salvar link** (a configuração fica salva neste navegador). **Ⅱ Pausar Ao Vivo** desativa as consultas; **Retomar Ao Vivo** apenas reabilita o botão, sem buscar dados automaticamente. Clique em **↻ Atualizar Forms Ao Vivo** para consultar, mesclar as respostas e ver quantas respostas/IDs novos e quantos pacotes novos em **A validar** chegaram. O anexo manual .ods/.xlsx/.csv continua igual.
 - **Copiar selecionadas para o Forms** (e Ctrl+C) e **BAIXAR FORMS → Copiar** agora copiam a partir da coluna **VALIDADOR** (sem o carimbo). Cole na célula VALIDADOR da primeira linha vazia. O .xlsx continua com o carimbo completo.
 - As mensagens da aba **Mensagem Logistic** aparecem como botões em cada linha da lista; um clique copia a mensagem (no lugar do seletor antigo).
 - Qualquer clique na linha (copiar ID, mensagem, Abrir Logistic, histórico…) primeiro executa a ação e só depois abre o pacote centralizado (TRATANDO). Em status/validador, abre ao escolher a opção.

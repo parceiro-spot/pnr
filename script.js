@@ -1,11 +1,4 @@
 const $ = s => document.querySelector(s);
-// A navegação principal pertence ao aplicativo inteiro, não apenas ao módulo
-// Forms. Assim, uma falha na leitura do Forms ao vivo não deixa a Análise PNR
-// sem resposta ao clique.
-document.querySelectorAll("#nav button").forEach(b => b.addEventListener("click", () => {
-  document.querySelectorAll("#nav button").forEach(x => x.classList.toggle("on", x === b));
-  document.querySelectorAll("#nav button").forEach(x => { const view = document.getElementById(x.dataset.v); if (view) view.hidden = x !== b; });
-}));
 const ST = ["Com penalidade", "Aguardando comprovante"];
 let pnr = null, bsc = null, rows = [], total = 0, statusAll = {};
 let cur = ST[0], tipo = "TODOS", data = "TUDO", regional = "TODAS", charts = [];
@@ -245,7 +238,7 @@ function render() {
   const list = rows.filter(r => byTipo(r) && (data === "TUDO" || r.data === data)).map(r => ({...r, base: displayBase(r)}));
   const tot = list.reduce((t, r) => t + r.valor, 0);
   const P = $("#panel");
-  P.innerHTML = `<h2 class="ttl">${cur}${tipo === "TODOS" ? "" : " " + tipo}</h2>
+  P.innerHTML = `<h2 class="ttl">${cur}</h2><p class="tsub date-context">Tipo: ${tipo === "TODOS" ? "XPT + SVC" : tipo} · Data: ${data === "TUDO" ? "(Tudo)" : ddmm(data)} · ${list.length} casos · ${brl(tot)} em aberto</p>
   <div class="tabs">
    <div class="card"><h3>BASES × QUANTIDADE</h3><p>Número de casos por base. Vermelho = mais casos. Clique numa base para ver o detalhe.</p><table class="xl" id="t1"></table></div>
    <div class="card"><h3>BASE × VALOR EM ABERTO</h3><p>Soma do valor das PNR por base. Vermelho = maior valor. Clique numa base para ver o detalhe.</p><table class="xl" id="t2"></table></div>

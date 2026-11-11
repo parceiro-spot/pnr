@@ -570,23 +570,82 @@
       try { analyzeNow(); } catch (e) { console.error("Falha ao abrir o Forms salvo:", e); $("#finfo").textContent = "Não consegui abrir o Forms salvo (" + (e && e.message || e) + "). Anexe o arquivo de novo."; }
     }
   })().catch(e => console.error(e));
-  const LIVE_FORMS_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTTWvTn2sD17nnzOHancBZWx9Thu80bIBUp_EeWMOxKQEiuMdKkDfqiGy63UCun_YzF_MpGKw5T4aiY/pub?output=csv";
+  const LIVE_FORMS_DEFAULT_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTTWvTn2sD17nnzOHancBZWx9Thu80bIBUp_EeWMOxKQEiuMdKkDfqiGy63UCun_YzF_MpGKw5T4aiY/pub?output=csv";
+  let liveFormsUrl = store.get("forms_live_url", LIVE_FORMS_DEFAULT_URL);
+  if (typeof liveFormsUrl !== "string" || !liveFormsUrl.trim()) liveFormsUrl = LIVE_FORMS_DEFAULT_URL;
+  let livePaused = store.get("forms_live_paused", false) === true;
+  let liveFetching = false, liveFetchController = null;
+  const liveUrlInput = $("#fLiveUrl"), liveSaveButton = $("#fLiveSave"), livePauseButton = $("#fLivePause"), liveRefreshButton = $("#fLiveRefresh"), liveStatus = $("#fLiveStatus");
+  const setLiveStatus = (kind, text) => {
+    liveStatus.classList.remove("ok", "error");
+    if (kind) liveStatus.classList.add(kind);
+    liveStatus.textContent = text;
+  };
+  const parseLiveUrl = value => {
+    const raw = String(value || "").trim();
+    if (!raw) throw new Error("Cole o link CSV do Forms Ao Vivo.");
+    let url;
+    try { url = new URL(raw); } catch (e) { throw new Error("Cole a URL completa do Forms Ao Vivo."); }
+    if (url.protocol !== "https:") throw new Error("O link do Forms Ao Vivo precisa começar com https://.");
+    return url;
+  };
+  const syncLiveControls = () => {
+    livePauseButton.textContent = livePaused ? "▶ Retomar Ao Vivo" : "Ⅱ Pausar Ao Vivo";
+    livePauseButton.setAttribute("aria-pressed", String(livePaused));
+    livePauseButton.title = livePaused ? "Retomar consultas manuais do Forms Ao Vivo" : "Pausar consultas do Forms Ao Vivo";
+    liveRefreshButton.disabled = livePaused || liveFetching;
+    liveSaveButton.disabled = liveFetching;
+    liveUrlInput.disabled = liveFetching;
+  };
+  liveUrlInput.value = liveFormsUrl;
+  syncLiveControls();
+  setLiveStatus("", livePaused
+    ? "Ao Vivo pausado. Retome para permitir consultas; o anexo ODS continua disponível."
+    : "Edite o link acima se precisar. A consulta só acontece ao clicar em Atualizar; o anexo ODS continua disponível.");
+  liveSaveButton.onclick = () => {
+    try {
+      liveFormsUrl = parseLiveUrl(liveUrlInput.value).href;
+      store.set("forms_live_url", liveFormsUrl);
+      liveUrlInput.value = liveFormsUrl;
+      setLiveStatus("ok", livePaused ? "Link salvo. Ao Vivo segue pausado; retome para permitir consultas." : "Link salvo neste navegador. Clique em Atualizar para consultar a planilha.");
+    } catch (e) { setLiveStatus("error", e.message || String(e)); }
+  };
+  livePauseButton.onclick = () => {
+    livePaused = !livePaused;
+    store.set("forms_live_paused", livePaused);
+    syncLiveControls();
+    if (livePaused && liveFetchController) {
+      liveFetchController.abort();
+      setLiveStatus("", "Ao Vivo pausado; a consulta em andamento foi interrompida.");
+    } else if (livePaused) {
+      setLiveStatus("", "Ao Vivo pausado. Retome para permitir consultas; o anexo ODS continua disponível.");
+    } else {
+      setLiveStatus("ok", "Ao Vivo retomado. Clique em Atualizar quando quiser buscar; nada será carregado automaticamente.");
+    }
+  };
   const liveIdsIn = rows => {
     const C = Core.colMap(Array.isArray(rows) ? rows : []);
     return C.id ? rows.flatMap(r => Core.extractIds(r[C.id])) : [];
   };
-  $("#fLiveRefresh").onclick = async () => {
-    const button = $("#fLiveRefresh"), status = $("#fLiveStatus");
-    if (button.disabled) return;
-    button.disabled = true;
-    button.textContent = "Consultando Forms Ao Vivo…";
-    status.classList.remove("ok", "error");
-    status.textContent = "Buscando os dados publicados no Google Sheets…";
+  liveRefreshButton.onclick = async () => {
+    if (livePaused || liveFetching) return;
+    try {
+      liveFormsUrl = parseLiveUrl(liveUrlInput.value).href;
+      store.set("forms_live_url", liveFormsUrl);
+      liveUrlInput.value = liveFormsUrl;
+    } catch (e) { setLiveStatus("error", e.message || String(e)); return; }
+    liveFetching = true;
+    syncLiveControls();
+    liveRefreshButton.textContent = "Consultando Forms Ao Vivo…";
+    setLiveStatus("", "Buscando os dados publicados no Google Sheets…");
+    const controller = new AbortController();
+    liveFetchController = controller;
     try {
       await ready;
-      const url = new URL(LIVE_FORMS_CSV_URL);
+      if (livePaused) { setLiveStatus("", "Ao Vivo pausado. Retome para iniciar uma nova consulta."); return; }
+      const url = new URL(liveFormsUrl);
       url.searchParams.set("_", String(Date.now()));
-      const response = await fetch(url.toString(), { cache: "no-store", headers: { Accept: "text/csv" } });
+      const response = await fetch(url.toString(), { cache: "no-store", headers: { Accept: "text/csv" }, signal: controller.signal });
       if (!response.ok) throw new Error(`o Google respondeu HTTP ${response.status}`);
       const csvText = await response.text();
       if (!csvText.trim()) throw new Error("o CSV retornou vazio");
@@ -627,15 +686,19 @@
         ? `+${merged.added.toLocaleString("pt-BR")} respostas novas · ${merged.updated.toLocaleString("pt-BR")} atualizadas · ${idsNovos.size.toLocaleString("pt-BR")} IDs novos`
         : "sem respostas novas · 0 IDs novos";
       const avisos = (parsed.errors || []).length ? ` · ${parsed.errors.length.toLocaleString("pt-BR")} avisos no CSV` : "";
-      status.classList.add("ok");
-      status.textContent = `Atualizado às ${hora} · ${records.length.toLocaleString("pt-BR")} respostas lidas · ${alteracoes} · +${novosAValidar.toLocaleString("pt-BR")} novos em A validar${avisos}`;
+      setLiveStatus("ok", `Atualizado às ${hora} · ${records.length.toLocaleString("pt-BR")} respostas lidas · ${alteracoes} · +${novosAValidar.toLocaleString("pt-BR")} novos em A validar${avisos}`);
     } catch (e) {
+      if (e && e.name === "AbortError") {
+        setLiveStatus("", livePaused ? "Consulta interrompida. Ao Vivo está pausado." : "Consulta interrompida. Clique em Atualizar para tentar novamente.");
+        return;
+      }
       console.error("Falha ao atualizar Forms Ao Vivo:", e);
-      status.classList.add("error");
-      status.textContent = `Falha ao atualizar Forms Ao Vivo: ${e.message || e}`;
+      setLiveStatus("error", `Falha ao atualizar Forms Ao Vivo: ${e.message || e}`);
     } finally {
-      button.disabled = false;
-      button.textContent = "↻ Atualizar Forms Ao Vivo";
+      liveFetchController = null;
+      liveFetching = false;
+      syncLiveControls();
+      liveRefreshButton.textContent = "↻ Atualizar Forms Ao Vivo";
     }
   };
   function reanalyze() {

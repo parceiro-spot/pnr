@@ -36,7 +36,11 @@
 <p class="sub">Suba o Forms baixado em <b>.ods</b> (ou .xlsx / .csv). O site junta as respostas por ID, conta quantas vezes cada pacote foi <b>recusado</b> e monta a fila para você trabalhar por regional. Em <b>Abrir Logistic</b> escolha <b>Normal</b> (copia o ID e abre o Logistic) ou <b>Anônimo</b> (copia o link para você colar numa janela anônima).</p>
 <nav class="nav form-nav" id="formsNav"><button data-form-view="formAnalysisTab" class="on">📋 Análise Forms</button><button data-form-view="formMessageTab">💬 Mensagem Logistic</button></nav>
 <div id="formAnalysisTab">
-<div class="live-refresh"><button type="button" id="fLiveRefresh" class="pri" aria-describedby="fLiveStatus">↻ Atualizar Forms Ao Vivo</button><span id="fLiveStatus" class="mu" role="status" aria-live="polite">Consulta manual: a planilha Ao Vivo só é buscada quando você clicar. O anexo ODS continua disponível abaixo.</span></div>
+<div class="live-refresh" aria-label="Controles do Forms Ao Vivo">
+<label class="live-url-label" for="fLiveUrl">Link do Forms Ao Vivo (CSV)<input id="fLiveUrl" type="url" inputmode="url" autocomplete="url" placeholder="Cole aqui o link publicado do CSV"></label>
+<div class="live-actions"><button type="button" id="fLiveSave">Salvar link</button><button type="button" id="fLivePause" aria-pressed="false">Ⅱ Pausar Ao Vivo</button><button type="button" id="fLiveRefresh" class="pri" aria-describedby="fLiveStatus">↻ Atualizar Forms Ao Vivo</button></div>
+<span id="fLiveStatus" class="mu" role="status" aria-live="polite">Cole o link CSV e salve. A atualização é manual; o anexo ODS continua disponível abaixo.</span>
+</div>
 <div class="drops">
 <label class="drop" id="fd1"><b id="fb1">1 · Forms (.ods / .xlsx / .csv)</b><span id="fs1">clique ou arraste aqui</span><input type="file" accept=".ods,.xlsx,.xls,.csv" hidden id="ff1"></label>
 </div>
