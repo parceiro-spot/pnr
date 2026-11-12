@@ -59,7 +59,9 @@
   });
   apply();
   // Permite arrastar as duas bolhas; as coordenadas ficam salvas neste navegador.
-  const POS_KEY = "pnr_floating_positions";
+  // v2 invalida posições gravadas pela implementação antiga, que movia apenas
+  // o botão interno com offsets relativos e podia deixá-lo fora da tela.
+  const POS_KEY = "pnr_floating_positions_v2";
   let positions = {};
   try { positions = JSON.parse(localStorage.getItem(POS_KEY) || "{}"); } catch (e) {}
   // Forms é um botão dentro de um widget; mover o contêiner evita que
@@ -78,7 +80,10 @@
     el.addEventListener("pointerdown", e => {
       if (e.button !== 0) return;
       const r = el.getBoundingClientRect(); start = { x:e.clientX, y:e.clientY, left:r.left, top:r.top };
-      moved = false; el.setPointerCapture(e.pointerId);
+      moved = false;
+      // Capturar no botão pressionado (não no contêiner) mantém o alvo do
+      // evento click no próprio botão após pointerup.
+      if (e.target?.setPointerCapture) e.target.setPointerCapture(e.pointerId);
     });
     el.addEventListener("pointermove", e => {
       if (!start) return;
