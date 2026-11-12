@@ -1388,7 +1388,14 @@
   }
   function renderMsgs() {
     $("#msgList").innerHTML = MSGS.map(([t, m], i) => `<div class="msgc" data-m="${i}"><label>Título<input class="msg-title" type="text" maxlength="80" value="${esc(t)}"></label><label>Mensagem<textarea class="msg-text" rows="4" maxlength="1000">${esc(m)}</textarea></label><div class="msg-actions"><button type="button" class="mini" data-msg-save>Salvar alterações</button><button type="button" class="mini" data-msg-copy>⧉ Copiar</button></div></div>`).join("");
+    const alertMessages = $("#formsAlertMessages");
+    if (alertMessages) alertMessages.innerHTML = MSGS.map(([title, message], i) => `<button type="button" class="forms-alert-message" data-alert-message="${i}" title="Copiar mensagem ${esc(title)}"><b>${esc(title)}</b><span>${esc(message)}</span></button>`).join("");
   }
+  $("#formsAlertMessages")?.addEventListener("click", e => {
+    const button = e.target.closest("[data-alert-message]"); if (!button) return;
+    const message = MSGS[Number(button.dataset.alertMessage)]; if (!message) return;
+    copy(message[1]); flash(button, "✓ copiado");
+  });
   renderMsgs();
   $("#msgList").addEventListener("click", e => {
     const c = e.target.closest(".msgc"); if (!c) return;

@@ -1,32 +1,20 @@
-# Extensão Análise Forms — Avisos Flutuantes
+# WhatsApp — Recebimento
 
-Esta extensão mostra uma bolinha **PNR sobre qualquer página web normal do Chrome/Edge**, não apenas no Análise Forms. Quando a página Análise Forms está aberta, ela exibe todos os pacotes que continuam **A VALIDAR**, novos ou não, e mantém a fila sincronizada.
+Extensão do WhatsApp Web que identifica respostas de cliente como `recebi`, `recebi o produto`, `recebi o pedido`, `produto recebido` e `recebimento confirmado`. Mensagens enviadas por você são ignoradas.
 
-## Instalação no Chrome ou Edge
+## Instalação e autorização da sincronização
 
-1. Abra `chrome://extensions` no Chrome ou `edge://extensions` no Edge.
-2. Ative **Modo do desenvolvedor**.
-3. Clique em **Carregar sem compactação** / **Load unpacked**.
-4. Selecione esta pasta `extension`.
-5. Abra ou atualize a página do Análise Forms.
-6. Para a bolinha aparecer em abas que já estavam abertas, recarregue cada aba uma vez (`Ctrl+R`). Em novas abas ela aparece automaticamente.
+1. Abra `chrome://extensions` ou `edge://extensions` e ative o **Modo do desenvolvedor**.
+2. Clique em **Carregar sem compactação** e escolha a pasta `whatsapp-recebimento`.
+3. Abra ou recarregue `https://web.whatsapp.com/`.
+4. Clique no ícone da extensão WhatsApp na barra do navegador. No popup, informe a URL do dashboard e escolha **Salvar link e ativar sincronização**.
+5. Autorize o acesso solicitado para o domínio informado. A permissão é específica a esse domínio; sem ela, a extensão não consegue inserir as confirmações no dashboard.
+6. Recarregue a aba do WhatsApp Web. O botão verde **RECEBIMENTO** fica acima do botão **FORMS** e abre diretamente a aba Análise Recebimento.
 
-Se o navegador mostrar a opção **Acesso ao site**, selecione **Em todos os sites**. A versão atual também tenta injetar a bolinha nas abas web que já estavam abertas quando a extensão foi instalada ou atualizada.
+## O que aparece na tabela
 
-O botão **FORMS** ficará no canto inferior direito inclusive quando você estiver no Logistic, Google ou em outra página web. No Análise Forms, clique em **Atualizar Forms Ao Vivo** normalmente; a extensão não faz consultas automáticas.
+Uma confirmação detectada é salva automaticamente na tabela da Análise Recebimento com o nome do contato, o ID de 11 dígitos quando localizado na mensagem enviada no mesmo chat, o texto de confirmação e status **A VALIDAR**. Se não localizar o ID, a linha ainda é adicionada com o campo ID vazio para completar/editar no dashboard. A confirmação também fica numa fila local da extensão até ser confirmada como salva no dashboard.
 
-O Chrome/Edge não permite extensões sobre páginas internas como `chrome://extensions`, `edge://extensions`, a Chrome Web Store ou algumas páginas de PDF. Isso é uma limitação de segurança do navegador; em sites com endereço começando por `http://` ou `https://`, a bolinha funciona.
+Ao atualizar a extensão, ela ignora conversas antigas, mas tenta recuperar mensagens de confirmação dos últimos 20 minutos. Para mensagens mais antigas, use a aba Recebimento para registrar os dados manualmente.
 
-Na primeira vez, clique em **Ativar aviso do navegador** na janela da bolinha ou permita as notificações do navegador. O botão **Visualizar** volta para a aba que originou o aviso e abre o pacote pelo ID.
-
-## Janela e opções
-
-Ao clicar na bolinha, a extensão abre uma janela menor na própria página atual, sem trocar para o Análise Forms. Clique em **Visualizar** para ver os dados do envio. A janela pode ser aumentada ou reduzida arrastando o canto inferior direito.
-
-No botão **⚙ Configurar** da janela, ou clicando no ícone da extensão na barra do navegador, é possível desligar separadamente o **Botão flutuante**, a **Janela flutuante** e a **Notificação normal do navegador**. Se o botão flutuante for desligado, as opções continuam acessíveis pelo ícone da extensão.
-
-Na janela, os pacotes **A VALIDAR** têm prioridade e aparecem mesmo se não forem novos. Cada pacote mostra a base e o validador, e inclui copiar ID, foto, escolha de validador e status, **Validar no Forms** para abrir a linha no dash completo e **✕** para ocultar. As escolhas de status/validador são salvas no mesmo armazenamento das edições do dashboard.
-
-A janela também tem **↻ Atualizar**, que aciona o mesmo botão manual do Análise Forms, sem criar atualização automática. Use **Ctrl+clique** para selecionar IDs e depois **Ctrl+C** ou **⧉ Copiar selecionados** para copiar uma ID por linha.
-
-Quando a resposta tiver evidência vinculada, aparece **📷 Foto**. No detalhe do pacote também ficam os links **Ver foto**, que abrem a evidência em uma nova aba.
+A extensão não envia mensagens, não responde clientes e não usa uma API externa. Ela observa apenas o conteúdo que já aparece no WhatsApp Web aberto no navegador. Mudanças futuras na interface do WhatsApp podem exigir ajuste no detector.
