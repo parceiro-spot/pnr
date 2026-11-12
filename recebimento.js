@@ -53,7 +53,8 @@
     if (event.source !== window || event.data?.source !== "whatsapp-receipt-bridge" || event.data?.type !== "confirmation") return;
     const item = event.data.item || {}, waKey = String(item.key || `${item.chat}|${item.text}|${item.time}`);
     const id = String(item.id || "").replace(/\D/g, "").slice(0, 11), name = String(item.name || item.chat || "Cliente").trim();
-    const phone = String(item.phone || "").trim();
+    const chatPhone = String(item.chat || "").match(/(?:\+?55[ \t().-]*)?(?:\(?\d{2}\)?[ \t().-]*)?\d{4,5}[ \t.-]?\d{4}/)?.[0] || "";
+    const phone = String(item.phone || chatPhone).trim();
     let record = rows.find(r => r.whatsappKey === waKey || (id && r.id === id));
     if (record) {
       record.whatsappKey = waKey; record.chat = item.chat || record.chat || ""; record.receivedText = item.text || record.receivedText || ""; record.receivedAt = item.receivedAt || Date.now();

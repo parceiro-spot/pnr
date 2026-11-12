@@ -586,6 +586,8 @@
   let alertItems = store.get("forms_alert_items", []);
   if (!Array.isArray(alertItems)) alertItems = [];
   alertItems = alertItems.filter(item => item && item.status === "PENDENTE");
+  let alertQueueInitialized = store.get("forms_alert_queue_initialized", false) === true;
+  let manualAlertRefresh = false;
   const alertBubble = $("#formsAlertBubble"), alertPanel = $("#formsAlertPanel"), alertCount = $("#formsAlertCount"), alertItemsBox = $("#formsAlertItems"), alertSummary = $("#formsAlertSummary");
   const alertKey = (r, C) => {
     const id = C && C.id ? extractIds(r[C.id]).join(",") : "";
@@ -601,30 +603,40 @@
     store.set("forms_alert_seen_keys", [...alertSeenKeys].slice(-5000));
     store.set("forms_alert_baseline", alertBaselineReady);
     store.set("forms_alert_items", alertItems.slice(0, 40));
+    store.set("forms_alert_queue_initialized", alertQueueInitialized);
   };
   let publishedPendingSignature = null;
   const renderAlertItems = () => {
-    // O painel é uma fila de trabalho, não apenas um histórico de novidades:
-    // todo pacote que ainda está A VALIDAR aparece, mesmo que seja antigo.
-    const pending = (A?.cases || []).filter(c => c.status === "PENDENTE" && !isHiddenCase(c))
-      .sort((a, b) => (a.last?.ts instanceof Date ? a.last.ts.getTime() : 0) - (b.last?.ts instanceof Date ? b.last.ts.getTime() : 0));
-    const count = pending.length;
+    // A fila é um snapshot: mudar o status não remove o item da bolha.
+    if (!alertQueueInitialized && A?.cases) {
+      alertItems = A.cases.filter(c => c.status === "PENDENTE" && !isHiddenCase(c))
+        .map(c => ({ id: String(c.id), time: c.last?.ts instanceof Date ? fmtDT(c.last.ts) : "envio sem data", status: "PENDENTE", photos: c.last?.urls || [] })).slice(0, 40);
+      alertQueueInitialized = true; saveAlertState();
+    }
+    const queue = alertItems.slice(0, 40).filter(item => !isHiddenCase(byId.get(String(item.id)) || { id: item.id }));
+    const count = queue.length;
     const newIds = new Set(alertItems.map(x => String(x.id)));
     alertCount.hidden = !count;
     alertCount.textContent = count > 99 ? "99+" : String(count);
     alertBubble.classList.toggle("has-new", count > 0);
-    alertSummary.textContent = count ? `${count} pacote${count === 1 ? "" : "s"} A validar` : "Nenhum pacote A validar";
+    alertSummary.textContent = count ? `${count} item${count === 1 ? "" : "s"} na fila` : "Fila vazia — clique em Atualizar";
     alertItemsBox.innerHTML = count
-      ? `<div class="forms-alert-new-box"><b>📥 A VALIDAR — prioridade</b><small>Todos os pacotes pendentes aparecem aqui, novos ou não</small></div>${pending.map(c => {
-        const time = c.last?.ts instanceof Date ? fmtDT(c.last.ts) : "envio sem data";
-        const novo = newIds.has(String(c.id)) ? " · novo" : "";
-        const currentValidator = c.last?.validador || "";
+      ? `<div class="forms-alert-new-box"><b>📥 FILA DE ANÁLISE</b><small>Os itens permanecem aqui após mudar de status. “Atualizar” adiciona novos A validar.</small></div>${queue.map(item => {
+        const c = byId.get(String(item.id)), id = String(item.id);
+        const time = c?.last?.ts instanceof Date ? fmtDT(c.last.ts) : item.time || "envio sem data";
+        const status = c?.status || "PENDENTE", currentValidator = c?.last?.validador || "";
         const validatorExtra = currentValidator && !VALIDADORES.some(v => N(v) === N(currentValidator)) ? `<option value="${esc(currentValidator)}" selected>${esc(currentValidator)}</option>` : "";
         const statusOptions = statusTabs().filter(([key]) => key !== "TODOS").map(([key, text]) => `<option value="${esc(key)}">${esc(text)}</option>`).join("");
-        return `<div class="forms-alert-item"><div class="forms-alert-data"><b>${esc(c.id)}</b><small><b>Base:</b> ${esc(c.code || c.last?.baseRaw || "Não identificada")} · ${esc(time)} · A validar · ${esc(currentValidator || "Sem validador")}${novo}</small><select data-pending-validator="${esc(c.id)}" title="Alterar validador"><option value="">— Validador —</option>${VALIDADORES.map(v => `<option value="${esc(v)}"${N(v) === N(currentValidator) ? " selected" : ""}>${esc(v)}</option>`).join("")}${validatorExtra}</select><select data-pending-status="${esc(c.id)}" title="Validar ou alterar status"><option value="">— Validar pacote —</option>${statusOptions}</select></div><span><button type="button" data-pending-copy="${esc(c.id)}" title="Copiar ID">⧉ ID</button><button type="button" data-alert-view="${esc(c.id)}">Validar</button><button type="button" class="remove-id" data-pending-hide="${esc(c.id)}" title="Ocultar este ID">✕</button></span></div>`;
+        const controls = status === "PENDENTE"
+          ? `<select data-pending-validator="${esc(id)}" title="Alterar validador"><option value="">— Validador —</option>${VALIDADORES.map(v => `<option value="${esc(v)}"${N(v) === N(currentValidator) ? " selected" : ""}>${esc(v)}</option>`).join("")}${validatorExtra}</select><select data-pending-status="${esc(id)}" title="Validar ou alterar status"><option value="">— Validar pacote —</option>${statusOptions}</select>`
+          : `<small class="mu">Status atualizado: ${esc(badge(status))}</small>`;
+        return `<div class="forms-alert-item"><div class="forms-alert-data"><b>${esc(id)}</b><small><b>Base:</b> ${esc(c?.code || c?.last?.baseRaw || "Não identificada")} · ${esc(time)} · ${esc(badge(status))} · ${esc(currentValidator || "Sem validador")}${newIds.has(id) ? " · novo" : ""}</small>${controls}</div><span><button type="button" data-pending-copy="${esc(id)}" title="Copiar ID">⧉ ID</button><button type="button" data-alert-view="${esc(id)}">Ver</button><button type="button" class="remove-id" data-pending-hide="${esc(id)}" title="Ocultar este ID">✕</button></span></div>`;
       }).join("")}`
-      : `<p class="mu">${A ? "Nenhum pacote A VALIDAR pendente." : "Carregue ou atualize o Forms para ver os pacotes A VALIDAR."}</p>`;
-    const publish = pending.map(c => ({ id: c.id, base: c.code || c.last?.baseRaw || "Base não identificada", validator: c.last?.validador || "", validators: VALIDADORES, statusOptions: statusTabs().filter(([key]) => key !== "TODOS").map(([key, text]) => ({ value: key, label: text })), time: c.last?.ts instanceof Date ? fmtDT(c.last.ts) : "envio sem data", photos: c.last?.urls || [] }));
+      : `<p class="mu">Nenhum item na fila. Clique em Atualizar para adicionar os novos A VALIDAR.</p>`;
+    const publish = queue.filter(item => (byId.get(String(item.id))?.status || "PENDENTE") === "PENDENTE").map(item => {
+      const c = byId.get(String(item.id));
+      return { id: String(item.id), base: c?.code || c?.last?.baseRaw || "Base não identificada", validator: c?.last?.validador || "", validators: VALIDADORES, statusOptions: statusTabs().filter(([key]) => key !== "TODOS").map(([value, label]) => ({ value, label })), time: c?.last?.ts instanceof Date ? fmtDT(c.last.ts) : item.time || "envio sem data", photos: c?.last?.urls || item.photos || [] };
+    });
     const signature = JSON.stringify(publish);
     if (signature !== publishedPendingSignature) {
       publishedPendingSignature = signature;
@@ -645,6 +657,12 @@
     note.onclick = () => { window.focus(); openAlertPanel(true); };
   };
   const addFormAlerts = (rows, C) => {
+    if (manualAlertRefresh) {
+      const known = new Set(alertItems.map(item => String(item.id)));
+      const currentPending = (A?.cases || []).filter(c => c.status === "PENDENTE" && !isHiddenCase(c));
+      alertItems = [...currentPending.filter(c => !known.has(String(c.id))).map(c => ({ id: String(c.id), time: c.last?.ts instanceof Date ? fmtDT(c.last.ts) : "envio sem data", status: "PENDENTE", photos: c.last?.urls || [] })), ...alertItems].slice(0, 40);
+      alertQueueInitialized = true; manualAlertRefresh = false; saveAlertState(); renderAlertItems();
+    }
     if (!alertBaselineReady) {
       (rows || []).forEach(r => alertSeenKeys.add(alertKey(r, C)));
       alertBaselineReady = true; saveAlertState(); renderAlertItems(); return;
@@ -660,7 +678,7 @@
     }
     if (!novos.length) { saveAlertState(); return; }
     // Mostra primeiro os mais recentes e não deixa a bolinha crescer indefinidamente.
-    alertItems = [...novos.reverse(), ...alertItems].slice(0, 40);
+    if (manualAlertRefresh) alertItems = [...novos.reverse(), ...alertItems].slice(0, 40);
     saveAlertState(); renderAlertItems(); beep();
     const n = novos[0]; showBrowserNotice(n);
     // A extensão do navegador recebe os mesmos avisos e mantém a bolinha
@@ -713,7 +731,10 @@
   $("#formsAlertRead").onclick = () => { alertItems = []; saveAlertState(); renderAlertItems(); };
   $("#formsAlertRefresh").onclick = () => {
     if (liveRefreshButton?.disabled) { setLiveStatus("", livePaused ? "Ao Vivo está pausado. Retome para atualizar." : "A atualização já está em andamento."); return; }
-    liveRefreshButton?.click();
+    manualAlertRefresh = true;
+    if (liveRefreshButton) liveRefreshButton.click();
+    else { manualAlertRefresh = false; renderAlertItems(); }
+    setTimeout(() => { if (manualAlertRefresh) { manualAlertRefresh = false; } }, 30000);
   };
   $("#formsAlertNotify").onclick = async e => {
     if (typeof Notification === "undefined") { e.currentTarget.textContent = "Este navegador não suporta avisos"; return; }
@@ -855,8 +876,8 @@
       const idsAntes = new Set(liveIdsIn(forms));
       const pendentesAntes = new Set((A?.cases || []).filter(c => c.status === "PENDENTE" && !isHiddenCase(c)).map(c => c.id));
       const merged = mergeForms(records, true);
-      addFormAlerts(records, C);
       analyzeNow();
+      addFormAlerts(records, C);
       const idsNovos = new Set(liveIdsIn(forms).filter(id => !idsAntes.has(id)));
       const novosAValidar = (A?.cases || []).filter(c => c.status === "PENDENTE" && !isHiddenCase(c) && !pendentesAntes.has(c.id)).length;
       const hora = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
