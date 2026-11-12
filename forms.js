@@ -525,6 +525,7 @@
     const idsDe = rs => { rs = Array.isArray(rs) ? rs : []; const k = Core.colMap(rs).id; return rs.flatMap(r => k ? extractIds(r[k]) : []); };
     const idsAntes = new Set(idsDe(forms));
     const r = mergeForms(incoming);
+    addFormAlerts(incoming, Core.colMap(incoming));
     const idsNovos = new Set(idsDe(r.rows).filter(id => !idsAntes.has(id)));
     $("#fs1").textContent = `${f.name} · ${incoming.length.toLocaleString("pt-BR")} linhas lidas · ${r.rows.length.toLocaleString("pt-BR")} salvas` +
       (r.added || r.updated ? ` · +${r.added.toLocaleString("pt-BR")} respostas novas${r.updated ? ` · ${r.updated.toLocaleString("pt-BR")} atualizadas` : ""} · ${idsNovos.size.toLocaleString("pt-BR")} IDs novos` : " · nenhuma resposta nova neste arquivo (já estava salvo)");
@@ -575,6 +576,96 @@
   if (typeof liveFormsUrl !== "string" || !liveFormsUrl.trim()) liveFormsUrl = LIVE_FORMS_DEFAULT_URL;
   let livePaused = store.get("forms_live_paused", false) === true;
   let liveFetching = false, liveFetchController = null;
+  // Avisos do Forms: a chave combina carimbo + ID, então uma nova resposta do mesmo pacote
+  // também pode ser avisada sem repetir toda a planilha a cada consulta.
+  let alertSeenKeys = new Set(store.get("forms_alert_seen_keys", []) || []);
+  let alertBaselineReady = store.get("forms_alert_baseline", false) === true;
+  let alertItems = store.get("forms_alert_items", []);
+  if (!Array.isArray(alertItems)) alertItems = [];
+  const alertBubble = $("#formsAlertBubble"), alertPanel = $("#formsAlertPanel"), alertCount = $("#formsAlertCount"), alertItemsBox = $("#formsAlertItems"), alertSummary = $("#formsAlertSummary");
+  const alertKey = (r, C) => {
+    const id = C && C.id ? extractIds(r[C.id]).join(",") : "";
+    const d = C && C.ts ? parseTs(r[C.ts]) : null;
+    return `${d ? d.getTime() : rowKey(r)}|${id || rowKey(r)}`;
+  };
+  const alertInfo = (r, C) => {
+    const ids = C && C.id ? extractIds(r[C.id]) : [];
+    const d = C && C.ts ? parseTs(r[C.ts]) : null;
+    return { id: ids[0] || "ID não identificado", time: d ? fmtDT(d) : "novo envio", status: C && C.status ? normStatus(r[C.status]) : "PENDENTE" };
+  };
+  const saveAlertState = () => {
+    store.set("forms_alert_seen_keys", [...alertSeenKeys].slice(-5000));
+    store.set("forms_alert_baseline", alertBaselineReady);
+    store.set("forms_alert_items", alertItems.slice(0, 40));
+  };
+  const renderAlertItems = () => {
+    const count = alertItems.length;
+    alertCount.hidden = !count;
+    alertCount.textContent = count > 99 ? "99+" : String(count);
+    alertBubble.classList.toggle("has-new", count > 0);
+    alertSummary.textContent = count ? `${count} envio${count === 1 ? "" : "s"} novo${count === 1 ? "" : "s"}` : "Nenhum aviso novo";
+    alertItemsBox.innerHTML = count ? alertItems.map((x, i) => `<div class="forms-alert-item"><div><b>${esc(x.id)}</b><small>${esc(x.time)} · ${esc(x.status)}</small></div><button type="button" data-alert-view="${i}">Visualizar</button></div>`).join("") : '<p class="mu">Os novos envios aparecerão aqui.</p>';
+  };
+  const openAlertPanel = on => { alertPanel.hidden = !on; alertBubble.setAttribute("aria-expanded", String(on)); };
+  const beep = () => {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      const ctx = new AC(), o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = "sine"; o.frequency.value = 880; g.gain.setValueAtTime(.0001, ctx.currentTime); g.gain.exponentialRampToValueAtTime(.12, ctx.currentTime + .02); g.gain.exponentialRampToValueAtTime(.0001, ctx.currentTime + .35); o.connect(g).connect(ctx.destination); o.start(); o.stop(ctx.currentTime + .36); o.onended = () => ctx.close();
+    } catch (e) { /* alguns navegadores bloqueiam áudio sem interação */ }
+  };
+  const showBrowserNotice = n => {
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    const note = new Notification("Novo Forms recebido", { body: `${n.id} · ${n.status}`, tag: "analise-forms" });
+    note.onclick = () => { window.focus(); openAlertPanel(true); };
+  };
+  const addFormAlerts = (rows, C) => {
+    if (!alertBaselineReady) {
+      (rows || []).forEach(r => alertSeenKeys.add(alertKey(r, C)));
+      alertBaselineReady = true; saveAlertState(); renderAlertItems(); return;
+    }
+    const novos = [];
+    for (const r of rows || []) {
+      const key = alertKey(r, C); if (alertSeenKeys.has(key)) continue;
+      alertSeenKeys.add(key); novos.push(alertInfo(r, C));
+    }
+    if (!novos.length) { saveAlertState(); return; }
+    // Mostra primeiro os mais recentes e não deixa a bolinha crescer indefinidamente.
+    alertItems = [...novos.reverse(), ...alertItems].slice(0, 40);
+    saveAlertState(); renderAlertItems(); beep();
+    const n = novos[0]; showBrowserNotice(n);
+    // A extensão do navegador recebe os mesmos avisos e mantém a bolinha
+    // mesmo quando esta página é trocada pelo Logistic ou por outra aba.
+    try { window.postMessage({ source: "analise-forms", type: "new-form-alerts", items: novos }, "*"); } catch (e) {}
+    if (document.hidden && navigator.vibrate) navigator.vibrate([120, 80, 120]);
+  };
+  ready.then(() => {
+    if (Array.isArray(forms) && forms.length && !alertBaselineReady) addFormAlerts(forms, Core.colMap(forms));
+  }).catch(() => {});
+  const focusAlertCase = id => {
+    S.st = "TODOS"; S.dt = "TUDO"; S.q = String(id); S.limit = 100;
+    const q = $("#fQ"); if (q) q.value = String(id);
+    document.querySelector('#nav button[data-v="viewForms"]')?.click();
+    render(); openAlertPanel(false);
+  };
+  renderAlertItems();
+  alertBubble.onclick = () => openAlertPanel(alertPanel.hidden);
+  $("#formsAlertClose").onclick = () => openAlertPanel(false);
+  $("#formsAlertRead").onclick = () => { alertItems = []; saveAlertState(); renderAlertItems(); };
+  $("#formsAlertNotify").onclick = async e => {
+    if (typeof Notification === "undefined") { e.currentTarget.textContent = "Este navegador não suporta avisos"; return; }
+    const p = Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
+    e.currentTarget.textContent = p === "granted" ? "✓ Aviso do navegador ativado" : "Aviso bloqueado pelo navegador";
+    if (p === "granted") beep();
+  };
+  alertItemsBox.onclick = e => { const b = e.target.closest("[data-alert-view]"); if (b) focusAlertCase(alertItems[Number(b.dataset.alertView)].id); };
+  window.addEventListener("message", e => {
+    if (e.source !== window || !e.data || e.data.source !== "analise-forms-extension") return;
+    if (e.data.type === "installed") {
+      const widget = $("#formsAlertWidget"); if (widget) widget.hidden = true;
+    }
+    if (e.data.type === "focus-case" && e.data.id) focusAlertCase(e.data.id);
+  });
   const liveUrlInput = $("#fLiveUrl"), liveSaveButton = $("#fLiveSave"), livePauseButton = $("#fLivePause"), liveRefreshButton = $("#fLiveRefresh"), liveStatus = $("#fLiveStatus");
   const setLiveStatus = (kind, text) => {
     liveStatus.classList.remove("ok", "error");
@@ -678,6 +769,7 @@
       const idsAntes = new Set(liveIdsIn(forms));
       const pendentesAntes = new Set((A?.cases || []).filter(c => c.status === "PENDENTE" && !isHiddenCase(c)).map(c => c.id));
       const merged = mergeForms(records, true);
+      addFormAlerts(records, C);
       analyzeNow();
       const idsNovos = new Set(liveIdsIn(forms).filter(id => !idsAntes.has(id)));
       const novosAValidar = (A?.cases || []).filter(c => c.status === "PENDENTE" && !isHiddenCase(c) && !pendentesAntes.has(c.id)).length;
