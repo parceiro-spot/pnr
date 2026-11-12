@@ -1,32 +1,25 @@
-# Extensão Análise Forms — Avisos Flutuantes
+# WhatsApp — Avisos de Recebimento
 
-Esta extensão mostra uma bolinha **PNR sobre qualquer página web normal do Chrome/Edge**, não apenas no Análise Forms. Ela recebe avisos somente quando o projeto Análise Forms detectar novos envios **A validar** depois de uma atualização manual.
+Extensão independente do Análise Forms. Ela funciona somente no **WhatsApp Web** e avisa quando uma mensagem recebida de um cliente contém confirmações como:
 
-## Instalação no Chrome ou Edge
+- `recebi`
+- `eu recebi`
+- `recebi o produto`
+- `recebi o pedido`
+- `produto recebido`
+- `pedido recebido`
+- `recebimento confirmado`
 
-1. Abra `chrome://extensions` no Chrome ou `edge://extensions` no Edge.
+Mensagens enviadas por você são ignoradas. A primeira carga da conversa é usada como base para não notificar mensagens antigas; somente mensagens novas que chegarem depois são avaliadas.
+
+## Instalação
+
+1. Abra `chrome://extensions` ou `edge://extensions`.
 2. Ative **Modo do desenvolvedor**.
-3. Clique em **Carregar sem compactação** / **Load unpacked**.
-4. Selecione esta pasta `extension`.
-5. Abra ou atualize a página do Análise Forms.
-6. Para a bolinha aparecer em abas que já estavam abertas, recarregue cada aba uma vez (`Ctrl+R`). Em novas abas ela aparece automaticamente.
+3. Clique em **Carregar sem compactação**.
+4. Selecione somente esta pasta `whatsapp-recebimento`.
+5. Abra ou recarregue `https://web.whatsapp.com/`.
+6. No WhatsApp Web, o botão flutuante verde **RECEBIMENTO** aparece logo acima do PNR. Clique nele para ajustar a captação, as notificações, o som e a visibilidade do botão.
+7. Se ocultar o botão flutuante, reative-o pelo ícone da extensão na barra do navegador (popup **WhatsApp — Recebimento**).
 
-Se o navegador mostrar a opção **Acesso ao site**, selecione **Em todos os sites**. A versão atual também tenta injetar a bolinha nas abas web que já estavam abertas quando a extensão foi instalada ou atualizada.
-
-A bolinha PNR ficará no canto inferior direito inclusive quando você estiver no Logistic, Google ou em outra página web. No Análise Forms, clique em **Atualizar Forms Ao Vivo** normalmente; a extensão não faz consultas automáticas.
-
-O Chrome/Edge não permite extensões sobre páginas internas como `chrome://extensions`, `edge://extensions`, a Chrome Web Store ou algumas páginas de PDF. Isso é uma limitação de segurança do navegador; em sites com endereço começando por `http://` ou `https://`, a bolinha funciona.
-
-Na primeira vez, clique em **Ativar aviso do navegador** na janela da bolinha ou permita as notificações do navegador. O botão **Visualizar** volta para a aba que originou o aviso e abre o pacote pelo ID.
-
-## Janela e opções
-
-Ao clicar na bolinha, a extensão abre uma janela menor na própria página atual, sem trocar para o Análise Forms. Clique em **Visualizar** para ver os dados do envio. A janela pode ser aumentada ou reduzida arrastando o canto inferior direito.
-
-No botão **⚙ Configurar** da janela, ou clicando no ícone da extensão na barra do navegador, é possível desligar separadamente o **Botão flutuante**, a **Janela flutuante** e a **Notificação normal do navegador**. Se o botão flutuante for desligado, as opções continuam acessíveis pelo ícone da extensão.
-
-A janela tem a caixa **Novos A validar**. O Forms que já estava carregado na primeira abertura serve apenas como base e não aparece nessa caixa. Só entram nela os pacotes novos detectados numa atualização manual posterior e que estejam A validar.
-
-A janela também tem **↻ Atualizar**, que aciona o mesmo botão manual do Análise Forms, sem criar atualização automática. Na caixa, use **Ctrl+clique** para selecionar IDs e depois **Ctrl+C** ou **⧉ Copiar selecionados** para copiar uma ID por linha.
-
-Quando a resposta tiver evidência vinculada, aparece **📷 Foto**. No detalhe do pacote também ficam os links **Ver foto**, que abrem a evidência em uma nova aba.
+A extensão não envia mensagens, não responde clientes e não usa uma API externa. Ela apenas identifica texto que já foi renderizado no WhatsApp Web aberto no navegador. Mudanças futuras na interface do WhatsApp podem exigir ajuste no detector.

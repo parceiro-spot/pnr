@@ -1,15 +1,19 @@
 {
   "manifest_version": 3,
-  "name": "PNR — Avisos do Forms",
-  "version": "1.2.0",
-  "description": "Mostra a bolinha PNR sobre páginas web e avisa quando o Análise Forms detectar novos envios.",
-  "permissions": ["storage", "notifications", "tabs", "scripting"],
-  "host_permissions": ["<all_urls>"],
-  "action": { "default_title": "Configurar PNR", "default_popup": "popup.html", "default_icon": { "16": "icon-16.png", "48": "icon-48.png", "128": "icon.png" } },
+  "name": "WhatsApp — Avisos de Recebimento",
+  "version": "1.1.0",
+  "description": "Capta confirmações de recebimento no WhatsApp Web e oferece o botão flutuante RECEBIMENTO acima do PNR.",
+  "permissions": ["storage", "notifications", "tabs"],
+  "host_permissions": ["https://web.whatsapp.com/*"],
+  "action": {
+    "default_title": "Configurar avisos de recebimento",
+    "default_popup": "popup.html",
+    "default_icon": { "16": "icon-16.png", "48": "icon-48.png", "128": "icon.png" }
+  },
   "icons": { "16": "icon-16.png", "48": "icon-48.png", "128": "icon.png" },
   "background": { "service_worker": "background.js" },
   "content_scripts": [{
-    "matches": ["<all_urls>"],
+    "matches": ["https://web.whatsapp.com/*"],
     "js": ["content.js"],
     "run_at": "document_idle"
   }]

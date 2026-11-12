@@ -154,7 +154,10 @@
         idRaw, ids: extractIds(idRaw), baseRaw: String(g(r, C.base) ?? "").trim(), codes: extractCodes(g(r, C.base)),
         motivo: String(g(r, C.motivo) ?? "").trim(), evid, urls: URLS(evid),
         focal: String(g(r, C.focal) ?? "").trim(), motorista: String(g(r, C.motorista) ?? "").trim(),
-        email: String(g(r, C.email) ?? "").trim(), motRecusa: String(g(r, C.recusa) ?? "").trim()
+        email: String(g(r, C.email) ?? "").trim(), motRecusa: String(g(r, C.recusa) ?? "").trim(),
+        // Guarda o texto bruto de todas as colunas para permitir busca por nome e outros campos
+        // mesmo quando o Forms tiver cabeçalhos/colunas diferentes entre arquivos.
+        searchText: Object.values(r).map(v => String(v ?? "")).join(" ")
       };
       const before = it.ids.length;
       it.ids = it.ids.filter(id => !excludedIds.has(id));
@@ -599,13 +602,31 @@
     store.set("forms_alert_baseline", alertBaselineReady);
     store.set("forms_alert_items", alertItems.slice(0, 40));
   };
+  let publishedPendingSignature = null;
   const renderAlertItems = () => {
-    const count = alertItems.length;
+    // O painel é uma fila de trabalho, não apenas um histórico de novidades:
+    // todo pacote que ainda está A VALIDAR aparece, mesmo que seja antigo.
+    const pending = (A?.cases || []).filter(c => c.status === "PENDENTE" && !isHiddenCase(c))
+      .sort((a, b) => (a.last?.ts instanceof Date ? a.last.ts.getTime() : 0) - (b.last?.ts instanceof Date ? b.last.ts.getTime() : 0));
+    const count = pending.length;
+    const newIds = new Set(alertItems.map(x => String(x.id)));
     alertCount.hidden = !count;
     alertCount.textContent = count > 99 ? "99+" : String(count);
     alertBubble.classList.toggle("has-new", count > 0);
-    alertSummary.textContent = count ? `${count} pacote${count === 1 ? "" : "s"} novo${count === 1 ? "" : "s"}` : "Nenhum pacote novo";
-    alertItemsBox.innerHTML = count ? `<div class="forms-alert-new-box"><b>📥 Novos pacotes A validar</b><small>Entraram desde a última atualização manual</small></div>${alertItems.map((x, i) => `<div class="forms-alert-item"><div><b>${esc(x.id)}</b><small>${esc(x.time)} · A validar</small></div><button type="button" data-alert-view="${i}">Visualizar</button></div>`).join("")}` : '<p class="mu">A caixa de novos A validar está vazia.</p>';
+    alertSummary.textContent = count ? `${count} pacote${count === 1 ? "" : "s"} A validar` : "Nenhum pacote A validar";
+    alertItemsBox.innerHTML = count
+      ? `<div class="forms-alert-new-box"><b>📥 A VALIDAR — prioridade</b><small>Todos os pacotes pendentes aparecem aqui, novos ou não</small></div>${pending.map(c => {
+        const time = c.last?.ts instanceof Date ? fmtDT(c.last.ts) : "envio sem data";
+        const novo = newIds.has(String(c.id)) ? " · novo" : "";
+        return `<div class="forms-alert-item"><div><b>${esc(c.id)}</b><small>${esc(time)} · A validar${novo}</small></div><span><button type="button" data-alert-view="${esc(c.id)}">Visualizar</button><button type="button" class="remove-id" data-pending-hide="${esc(c.id)}" title="Ocultar este ID">✕</button></span></div>`;
+      }).join("")}`
+      : `<p class="mu">${A ? "Nenhum pacote A VALIDAR pendente." : "Carregue ou atualize o Forms para ver os pacotes A VALIDAR."}</p>`;
+    const publish = pending.map(c => ({ id: c.id, time: c.last?.ts instanceof Date ? fmtDT(c.last.ts) : "envio sem data", photos: c.last?.urls || [] }));
+    const signature = JSON.stringify(publish);
+    if (signature !== publishedPendingSignature) {
+      publishedPendingSignature = signature;
+      try { window.postMessage({ source: "analise-forms", type: "pending-cases", items: publish }, "*"); } catch (e) {}
+    }
   };
   const openAlertPanel = on => { alertPanel.hidden = !on; alertBubble.setAttribute("aria-expanded", String(on)); };
   const beep = () => {
@@ -653,23 +674,42 @@
     document.querySelector('#nav button[data-v="viewForms"]')?.click();
     render(); openAlertPanel(false);
   };
+  const focusPendingCase = id => {
+    S.st = "PENDENTE"; S.dt = "TUDO"; S.q = String(id); S.limit = 100;
+    S.reg.clear(); S.val.clear();
+    const q = $("#fQ"); if (q) q.value = String(id);
+    document.querySelector('#nav button[data-v="viewForms"]')?.click();
+    render(); openAlertPanel(false);
+  };
   renderAlertItems();
   alertBubble.onclick = () => openAlertPanel(alertPanel.hidden);
+  $("#recebimentoFloat").onclick = () => document.querySelector('#nav button[data-v="viewRecebimento"]')?.click();
   $("#formsAlertClose").onclick = () => openAlertPanel(false);
   $("#formsAlertRead").onclick = () => { alertItems = []; saveAlertState(); renderAlertItems(); };
+  $("#formsAlertRefresh").onclick = () => {
+    if (liveRefreshButton?.disabled) { setLiveStatus("", livePaused ? "Ao Vivo está pausado. Retome para atualizar." : "A atualização já está em andamento."); return; }
+    liveRefreshButton?.click();
+  };
   $("#formsAlertNotify").onclick = async e => {
     if (typeof Notification === "undefined") { e.currentTarget.textContent = "Este navegador não suporta avisos"; return; }
     const p = Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
     e.currentTarget.textContent = p === "granted" ? "✓ Aviso do navegador ativado" : "Aviso bloqueado pelo navegador";
     if (p === "granted") beep();
   };
-  alertItemsBox.onclick = e => { const b = e.target.closest("[data-alert-view]"); if (b) focusAlertCase(alertItems[Number(b.dataset.alertView)].id); };
+  alertItemsBox.onclick = e => {
+    const hide = e.target.closest("[data-pending-hide]");
+    if (hide) { e.stopPropagation(); removeId(hide.dataset.pendingHide); return; }
+    const b = e.target.closest("[data-alert-view]"); if (b) focusPendingCase(b.dataset.alertView);
+  };
   window.addEventListener("message", e => {
     if (e.source !== window || !e.data || e.data.source !== "analise-forms-extension") return;
     if (e.data.type === "installed") {
-      const widget = $("#formsAlertWidget"); if (widget) widget.hidden = true;
+      const widget = $("#formsAlertWidget"); if (widget) { widget.dataset.extensionActive = "true"; widget.hidden = true; }
+      publishedPendingSignature = null;
+      renderAlertItems();
     }
-    if (e.data.type === "focus-case" && e.data.id) focusAlertCase(e.data.id);
+    if (e.data.type === "focus-case" && e.data.id) focusPendingCase(e.data.id);
+    if (e.data.type === "hide-pending" && e.data.id) removeId(e.data.id);
     if (e.data.type === "refresh-forms" && liveRefreshButton && !liveRefreshButton.disabled) liveRefreshButton.click();
   });
   const liveUrlInput = $("#fLiveUrl"), liveSaveButton = $("#fLiveSave"), livePauseButton = $("#fLivePause"), liveRefreshButton = $("#fLiveRefresh"), liveStatus = $("#fLiveStatus");
@@ -813,13 +853,16 @@
   // ---------- filtros ----------
   const matches = (c, skip) => {
     if (isHiddenCase(c)) return false;
+    const searching = String(S.q || "").trim().length > 0;
     // Uma busca explícita deve encontrar o pacote independentemente da situação selecionada.
-    if (!S.q && skip !== "st" && S.st !== "TODOS" && c.status !== S.st) return false;
+    if (!searching && skip !== "st" && S.st !== "TODOS" && c.status !== S.st) return false;
     if (skip !== "reg" && S.reg.size && !S.reg.has(c.regiao)) return false;
     if (skip !== "val" && S.val.size && !S.val.has(valOf(c))) return false;
-    if (S.dt !== "TUDO" && c.dia !== S.dt) return false;
-    if (S.q) {
-      const q = N(S.q), hay = N([c.id, c.code, c.regiao, c.status, c.last.motorista, c.last.focal, c.last.motivo, c.last.motRecusa, c.last.validador, ...c.recusaMotivos].join(" "));
+    // Ao pesquisar um ID, nome ou outro termo, não é necessário trocar o dia selecionado:
+    // a consulta atravessa automaticamente todas as datas carregadas.
+    if (!searching && S.dt !== "TUDO" && c.dia !== S.dt) return false;
+    if (searching) {
+      const q = N(S.q), hay = N([c.id, c.code, c.regiao, c.status, c.recusaMotivos.join(" "), ...c.att.map(a => a.searchText)].join(" "));
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -836,7 +879,7 @@
   };
 
   const currentList = () => A.cases.filter(c => matches(c)).sort(sorters[S.sort] || sorters.old);
-  function render() { if (!statusTabs().some(t => t[0] === S.st)) S.st = "TODOS"; const list = currentList(); renderTop(list); renderList(list); }
+  function render() { if (!statusTabs().some(t => t[0] === S.st)) S.st = "TODOS"; const list = currentList(); renderTop(list); renderList(list); renderAlertItems(); }
   function renderTop(list) {
     // Os números dos cartões e dos filtros acompanham a data selecionada.
     const all = (S.dt === "TUDO" ? A.cases : A.cases.filter(c => c.dia === S.dt)).filter(c => !isHiddenCase(c)), reg = S.reg;
@@ -891,7 +934,7 @@
     tog("fVal", S.val.size ? [...S.val].join(" + ") : "Todos", S.val.size ? vbase.filter(c => S.val.has(valOf(c))).length : vbase.length, S.val.size > 0);
     tog("fSt", label(S.st), nSt, false);
     foldSync();
-    $("#fTitle").innerHTML = `<h2 class="ttl">${label(S.st)} · ${!reg.size ? "todas as regionais" : [...reg].join(" + ")}</h2><p class="tsub">${list.length.toLocaleString("pt-BR")} pacotes · ${list.filter(c => c.recusas > 0).length} já recusados antes</p>`;
+    $("#fTitle").innerHTML = `<h2 class="ttl">${label(S.st)} · ${!reg.size ? "todas as regionais" : [...reg].join(" + ")}</h2><p class="tsub">${list.length.toLocaleString("pt-BR")} pacotes · ${list.filter(c => c.recusas > 0).length} já recusados antes${String(S.q || "").trim() ? " · busca em todas as datas" : ""}</p>`;
   }
   function renderList(list) {
     const show = list.slice(0, S.limit);

@@ -1,14 +1,12 @@
-const DEFAULTS = { bubble: true, window: true, browserNotification: true };
-const els = { bubble: document.querySelector('#bubble'), window: document.querySelector('#window'), notify: document.querySelector('#notify') };
-chrome.runtime.sendMessage({ type: 'get-alerts' }, state => {
-  const s = { ...DEFAULTS, ...((state && state.settings) || {}) };
-  els.bubble.checked = s.bubble; els.window.checked = s.window; els.notify.checked = s.browserNotification;
+const ids = ["floatingButton", "enabled", "browserNotification", "sound"];
+const defaults = { floatingButton: true, enabled: true, browserNotification: true, sound: true };
+const fields = Object.fromEntries(ids.map(id => [id, document.getElementById(id)]));
+chrome.runtime.sendMessage({ type: "get-settings" }, s => {
+  s = { ...defaults, ...(s || {}) };
+  fields.floatingButton.checked = s.floatingButton; fields.enabled.checked = s.enabled; fields.browserNotification.checked = s.browserNotification; fields.sound.checked = s.sound;
 });
 function save() {
-  const settings = { bubble: els.bubble.checked, window: els.window.checked, browserNotification: els.notify.checked };
-  chrome.runtime.sendMessage({ type: 'set-settings', settings }, () => {
-    document.querySelector('#status').textContent = 'Configuração salva.';
-    setTimeout(() => document.querySelector('#status').textContent = '', 1400);
-  });
+  const settings = { floatingButton: fields.floatingButton.checked, enabled: fields.enabled.checked, browserNotification: fields.browserNotification.checked, sound: fields.sound.checked };
+  chrome.runtime.sendMessage({ type: "set-settings", settings }, () => { document.getElementById("status").textContent = "Configuração salva."; setTimeout(() => document.getElementById("status").textContent = "", 1400); });
 }
-Object.values(els).forEach(el => el.addEventListener('change', save));
+ids.forEach(id => fields[id].addEventListener("change", save));
