@@ -11,6 +11,8 @@ Esta extensão mostra uma bolinha **PNR sobre qualquer página web normal do Chr
 5. Abra ou atualize a página do Análise Forms.
 6. Para a bolinha aparecer em abas que já estavam abertas, recarregue cada aba uma vez (`Ctrl+R`). Em novas abas ela aparece automaticamente.
 
+Se o navegador mostrar a opção **Acesso ao site**, selecione **Em todos os sites**. A versão atual também tenta injetar a bolinha nas abas web que já estavam abertas quando a extensão foi instalada ou atualizada.
+
 A bolinha PNR ficará no canto inferior direito inclusive quando você estiver no Logistic, Google ou em outra página web. No Análise Forms, clique em **Atualizar Forms Ao Vivo** normalmente; a extensão não faz consultas automáticas.
 
 O Chrome/Edge não permite extensões sobre páginas internas como `chrome://extensions`, `edge://extensions`, a Chrome Web Store ou algumas páginas de PDF. Isso é uma limitação de segurança do navegador; em sites com endereço começando por `http://` ou `https://`, a bolinha funciona.

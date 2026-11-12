@@ -3,6 +3,17 @@ const SOURCE_KEY = "analise_forms_source";
 const SETTINGS_KEY = "analise_forms_settings";
 const DEFAULT_SETTINGS = { bubble: true, window: true, browserNotification: true };
 
+async function injectIntoOpenWebTabs() {
+  const tabs = await chrome.tabs.query({});
+  await Promise.all(tabs.map(tab => {
+    if (!tab.id || !/^https?:\/\//i.test(tab.url || "")) return Promise.resolve();
+    return chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] }).catch(() => {});
+  }));
+}
+
+chrome.runtime.onInstalled.addListener(() => injectIntoOpenWebTabs());
+chrome.runtime.onStartup.addListener(() => injectIntoOpenWebTabs());
+
 async function readState() {
   const data = await chrome.storage.local.get([KEY, SOURCE_KEY, SETTINGS_KEY]);
   return {
