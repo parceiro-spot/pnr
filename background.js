@@ -85,6 +85,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (savedKeys.includes(key)) { seen.add(key); sendResponse({ duplicate: true }); return; }
       seen.add(key); if (seen.size > 1000) seen.delete(seen.values().next().value);
       const receipt = { ...item, key, receivedAt: item.receivedAt || Date.now() };
+      const whatsappTabs = await chrome.tabs.query({ url: "https://web.whatsapp.com/*" });
+      for (const tab of whatsappTabs) if (tab.id) chrome.tabs.sendMessage(tab.id, { type: "receipt-detected", item: receipt }).catch(() => {});
       await queueReceipt(receipt);
       await chrome.storage.local.set({ [SEEN]: [...savedKeys, key].slice(-2000) });
       if (settings.browserNotification) {

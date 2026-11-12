@@ -10,9 +10,21 @@
     return /\b(eu\s+)?recebi\b/.test(s) || /\bproduto\s+(foi\s+)?recebido\b/.test(s) || /\bpedido\s+(foi\s+)?recebido\b/.test(s) || /\brecebimento\s+confirmado\b/.test(s);
   };
   const textFrom = node => [...node.querySelectorAll("span.selectable-text, span.copyable-text, [dir='auto']")].map(x => x.innerText || x.textContent || "").join(" ").replace(/\s+/g, " ").trim() || (node.innerText || "").trim();
+  const chatHeader = () => document.querySelector("#main header") || document.querySelector("header");
   const chatName = node => {
-    const header = document.querySelector("header [data-testid='conversation-info-header-chat-title'], header span[title]");
-    return header?.getAttribute("title") || header?.textContent?.trim() || "Cliente";
+    const header = chatHeader();
+    const title = header?.querySelector("[data-testid='conversation-info-header-chat-title']") || header?.querySelector("span[title]");
+    return title?.getAttribute("title") || title?.textContent?.trim() || "Cliente";
+  };
+  const chatPhone = () => {
+    const header = chatHeader();
+    const candidates = [...(header?.querySelectorAll("[title], [aria-label]") || [])].map(el => el.getAttribute("title") || el.getAttribute("aria-label") || "");
+    candidates.push(header?.innerText || "");
+    for (const value of candidates) {
+      const m = String(value).match(/(?:\+?55[\s().-]*)?(?:\(?\d{2}\)?[\s().-]*)?9?\d{4}[\s.-]?\d{4}/);
+      if (m && m[0].replace(/\D/g, "").length >= 10) return m[0].trim();
+    }
+    return "";
   };
   const messageTime = node => {
     const message = node.closest("[data-pre-plain-text]") || node.closest(".message-in, .message-out") || node;
@@ -29,12 +41,12 @@
     for (let i = nodes.length - 1; i >= 0; i--) {
       const node = nodes[i], wrapper = node.closest("[data-pre-plain-text]") || node;
       if (!wrapper.closest(".message-out") && !wrapper.matches(".message-out")) continue;
-      const body = textFrom(wrapper), id = body.match(/(?:ID(?:\s+DO\s+(?:PACOTE|ENVIO))?\s*[:#-]?\s*)?(\d{11})/i)?.[1];
+      const body = textFrom(wrapper), id = body.match(/\bID(?:\s+DO\s+(?:PACOTE|ENVIO))?\s*[:#-]?\s*(\d{11})\b/i)?.[1];
       if (!id) continue;
       const name = body.match(/prezado\s+cliente\s+([^\n.!]+)/i)?.[1]?.trim() || chatName(wrapper);
-      return { id, name };
+      return { id, name, phone: chatPhone() };
     }
-    return { id: "", name: chatName(document.body) };
+    return { id: "", name: chatName(document.body), phone: chatPhone() };
   };
   function inspect(node, silent = false) {
     const message = node.closest("[data-pre-plain-text]") || node.closest(".message-in") || node;
@@ -48,7 +60,7 @@
     message.dataset.waReceiptSeen = key;
     if (silent) return;
     const context = conversationContext();
-    chrome.runtime.sendMessage({ type: "received-confirmation", item: { key, chat: chatName(message), name: context.name, id: context.id, text, time, receivedAt: messageTime(message) || Date.now() } }, response => {
+    chrome.runtime.sendMessage({ type: "received-confirmation", item: { key, chat: chatName(message), name: context.name, phone: context.phone, id: context.id, text, time, receivedAt: messageTime(message) || Date.now() } }, response => {
       if (!response?.ok || !state.settings.sound) return;
       try { const C = window.AudioContext || window.webkitAudioContext; const ctx = new C(), o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = 880; g.gain.value = .08; o.connect(g).connect(ctx.destination); o.start(); o.stop(ctx.currentTime + .18); o.onended = () => ctx.close(); } catch (e) {}
     });
@@ -72,12 +84,12 @@
   });
 
   const root = document.createElement("div"); root.id = ROOT;
-  root.innerHTML = `<button id="wa-receipt-bubble" title="Abrir a aba Análise Recebimento" aria-label="RECEBIMENTO">RECEBIMENTO</button><button id="wa-receipt-gear" title="Configurar RECEBIMENTO">⚙</button><section id="wa-receipt-panel" hidden><strong>Configurações de Recebimento</strong><label>Link do dashboard<input id="wa-dashboard-url" type="url" placeholder="https://seu-dashboard/" autocomplete="url"></label><button id="wa-save-url" type="button">Salvar link</button><label><input id="wa-floating" type="checkbox"> Mostrar botão flutuante</label><label><input id="wa-enabled" type="checkbox"> Ativar captação/avisos</label><label><input id="wa-notify" type="checkbox"> Notificação do navegador</label><label><input id="wa-sound" type="checkbox"> Som do aviso</label><small id="wa-status">Para gravar as confirmações na tabela, salve o link e autorize o domínio no popup da extensão.</small></section>`;
+  root.innerHTML = `<button id="wa-receipt-bubble" title="Abrir a aba Análise Recebimento" aria-label="Confirmações de recebimento">RECEBIMENTO <span id="wa-receipt-count" hidden>0</span></button><div id="wa-receipt-latest" hidden></div><button id="wa-receipt-gear" title="Configurar RECEBIMENTO">⚙</button><section id="wa-receipt-panel" hidden><strong>Configurações de Recebimento</strong><label>Link do dashboard<input id="wa-dashboard-url" type="url" placeholder="https://seu-dashboard/" autocomplete="url"></label><button id="wa-save-url" type="button">Salvar link</button><label><input id="wa-floating" type="checkbox"> Mostrar botão flutuante</label><label><input id="wa-enabled" type="checkbox"> Ativar captação/avisos</label><label><input id="wa-notify" type="checkbox"> Notificação do navegador</label><label><input id="wa-sound" type="checkbox"> Som do aviso</label><small id="wa-status">Para gravar as confirmações na tabela, salve o link e autorize o domínio no popup da extensão.</small></section>`;
   const style = document.createElement("style");
-  style.textContent = `#${ROOT}{position:fixed;right:20px;bottom:90px;z-index:2147483647;font-family:Arial,sans-serif;display:flex;align-items:center;gap:5px}#wa-receipt-bubble{min-width:142px;height:42px;padding:0 14px;border:0;border-radius:999px;background:#128c7e;color:#fff;font:800 12px Arial;letter-spacing:.04em;box-shadow:0 8px 24px #0005;cursor:pointer}#wa-receipt-bubble:hover{transform:translateY(-2px);background:#0d766b}#wa-receipt-gear{width:32px;height:32px;border:0;border-radius:50%;background:#fff;color:#128c7e;box-shadow:0 3px 10px #0003;cursor:pointer}#wa-receipt-panel{position:absolute;right:0;bottom:50px;width:290px;padding:13px;background:#f7fffd;border:1px solid #c7ded9;border-radius:12px;box-shadow:0 12px 32px #0004;color:#163b36;font:13px Arial}#wa-receipt-panel[hidden]{display:none}#wa-receipt-panel strong{display:block;margin-bottom:9px;font-size:14px}#wa-receipt-panel label{display:block;margin:9px 0;cursor:pointer}#wa-receipt-panel input[type=checkbox]{margin-right:7px;accent-color:#128c7e}#wa-dashboard-url{display:block;width:100%;margin-top:5px;padding:7px;border:1px solid #c7ded9;border-radius:6px;box-sizing:border-box}#wa-save-url{padding:6px 9px;border:1px solid #c7ded9;border-radius:6px;background:white;color:#163b36;cursor:pointer}#wa-receipt-panel small{display:block;margin-top:10px;color:#60736f;line-height:1.4}@media(max-width:560px){#${ROOT}{right:12px;bottom:78px}#wa-receipt-bubble{min-width:132px;height:40px}}`;
+  style.textContent = `#${ROOT}{position:fixed;right:20px;bottom:90px;z-index:2147483647;font-family:Arial,sans-serif;display:flex;align-items:center;gap:5px}#wa-receipt-bubble{min-width:110px;height:36px;padding:0 10px;border:0;border-radius:999px;background:#128c7e;color:#fff;font:800 12px Arial;letter-spacing:.04em;box-shadow:0 8px 24px #0005;cursor:pointer}#wa-receipt-count{display:inline-block;margin-left:3px;min-width:17px;padding:2px 4px;border-radius:99px;background:#d93025;color:white;font-size:10px}#wa-receipt-count[hidden]{display:none}#wa-receipt-latest{position:absolute;right:0;bottom:43px;max-width:280px;padding:9px 11px;border-radius:9px;background:#fff;color:#18332f;box-shadow:0 4px 15px #0004;font:12px/1.4 Arial}#wa-receipt-latest[hidden]{display:none}#wa-receipt-bubble:hover{transform:translateY(-2px);background:#0d766b}#wa-receipt-gear{width:32px;height:32px;border:0;border-radius:50%;background:#fff;color:#128c7e;box-shadow:0 3px 10px #0003;cursor:pointer}#wa-receipt-panel{position:absolute;right:0;bottom:50px;width:290px;padding:13px;background:#f7fffd;border:1px solid #c7ded9;border-radius:12px;box-shadow:0 12px 32px #0004;color:#163b36;font:13px Arial}#wa-receipt-panel[hidden]{display:none}#wa-receipt-panel strong{display:block;margin-bottom:9px;font-size:14px}#wa-receipt-panel label{display:block;margin:9px 0;cursor:pointer}#wa-receipt-panel input[type=checkbox]{margin-right:7px;accent-color:#128c7e}#wa-dashboard-url{display:block;width:100%;margin-top:5px;padding:7px;border:1px solid #c7ded9;border-radius:6px;box-sizing:border-box}#wa-save-url{padding:6px 9px;border:1px solid #c7ded9;border-radius:6px;background:white;color:#163b36;cursor:pointer}#wa-receipt-panel small{display:block;margin-top:10px;color:#60736f;line-height:1.4}@media(max-width:560px){#${ROOT}{right:12px;bottom:78px}#wa-receipt-bubble{min-width:132px;height:40px}}`;
   document.documentElement.append(root, style);
 
-  const bubble = root.querySelector("#wa-receipt-bubble"), gear = root.querySelector("#wa-receipt-gear"), panel = root.querySelector("#wa-receipt-panel"), status = root.querySelector("#wa-status"), urlInput = root.querySelector("#wa-dashboard-url");
+  const bubble = root.querySelector("#wa-receipt-bubble"), receiptCount = root.querySelector("#wa-receipt-count"), latestNotice = root.querySelector("#wa-receipt-latest"), gear = root.querySelector("#wa-receipt-gear"), panel = root.querySelector("#wa-receipt-panel"), status = root.querySelector("#wa-status"), urlInput = root.querySelector("#wa-dashboard-url");
   const controls = { floatingButton: root.querySelector("#wa-floating"), enabled: root.querySelector("#wa-enabled"), browserNotification: root.querySelector("#wa-notify"), sound: root.querySelector("#wa-sound") };
   bubble.onclick = () => chrome.runtime.sendMessage({ type: "open-receiving" }, response => {
     if (chrome.runtime.lastError) { panel.hidden = false; status.textContent = "Não consegui abrir o dashboard. Verifique o link salvo."; return; }
@@ -109,5 +121,16 @@
       }
     });
   };
-  chrome.runtime.onMessage.addListener(message => { if (message?.type === "settings-updated") showSettings(message.settings || {}); });
+  let confirmations = 0;
+  chrome.runtime.onMessage.addListener(message => {
+    if (message?.type === "settings-updated") showSettings(message.settings || {});
+    if (message?.type === "receipt-detected") {
+      confirmations++;
+      receiptCount.hidden = false; receiptCount.textContent = confirmations > 99 ? "99+" : String(confirmations);
+      const item = message.item || {};
+      latestNotice.textContent = `${item.name || item.chat || "Cliente"}${item.phone ? ` · ${item.phone}` : ""}${item.id ? ` · ID ${item.id}` : ""}: ${item.text || "Confirmou o recebimento"}`;
+      latestNotice.hidden = false;
+      clearTimeout(latestNotice._hideTimer); latestNotice._hideTimer = setTimeout(() => { latestNotice.hidden = true; }, 12000);
+    }
+  });
 })();

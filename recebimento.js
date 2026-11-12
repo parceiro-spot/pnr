@@ -19,7 +19,7 @@
   };
   function parseMessage(text) {
     const raw = String(text || "").trim(), lines = raw.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
-    const idMatch = raw.match(/(?:ID|ID\s+DO\s+PACOTE|ID\s+DO\s+ENVIO)\s*[:#-]?\s*(\d{11})/i) || raw.match(/\b\d{11}\b/);
+    const idMatch = raw.match(/\bID(?:\s+DO\s+(?:PACOTE|ENVIO))?\s*[:#-]?\s*(\d{11})\b/i);
     const id = idMatch ? idMatch[1] || idMatch[0] : "";
     const nameLine = lines.find(x => /^prezado\s+cliente/i.test(x));
     const name = nameLine ? nameLine.replace(/^prezado\s+cliente\s*/i, "").trim() : "";
@@ -53,18 +53,22 @@
     if (event.source !== window || event.data?.source !== "whatsapp-receipt-bridge" || event.data?.type !== "confirmation") return;
     const item = event.data.item || {}, waKey = String(item.key || `${item.chat}|${item.text}|${item.time}`);
     const id = String(item.id || "").replace(/\D/g, "").slice(0, 11), name = String(item.name || item.chat || "Cliente").trim();
+    const phone = String(item.phone || "").trim();
     let record = rows.find(r => r.whatsappKey === waKey || (id && r.id === id));
     if (record) {
       record.whatsappKey = waKey; record.chat = item.chat || record.chat || ""; record.receivedText = item.text || record.receivedText || ""; record.receivedAt = item.receivedAt || Date.now();
-      if (id) record.id = id; if (!record.name || record.name === "Cliente") record.name = name; if (!record.status) record.status = "A VALIDAR";
+      if (phone) record.phone = phone;
+      if (id) record.id = id; if (!record.name || record.name === "Cliente") record.name = name; if (!record.status || record.status === "A VALIDAR") record.status = "COMPROVANTE CARREGADO";
     } else {
-      record = { key: `wa-${waKey}`, whatsappKey: waKey, source: "WhatsApp", id, name, phone: "", base: "", driver: "", status: "A VALIDAR", validator: "", message: item.text || "", receivedText: item.text || "", chat: item.chat || "", receivedAt: item.receivedAt || Date.now(), updatedAt: Date.now() };
+      record = { key: `wa-${waKey}`, whatsappKey: waKey, source: "WhatsApp", id, name, phone, base: "", driver: "", status: "COMPROVANTE CARREGADO", validator: "", message: item.text || "", receivedText: item.text || "", chat: item.chat || "", receivedAt: item.receivedAt || Date.now(), updatedAt: Date.now() };
       rows.unshift(record);
     }
     save(); render();
     const notice = $("#rWhatsAppNotice");
-    if (notice) notice.textContent = `Confirmação recebida de ${record.name}${record.id ? ` · ID ${record.id}` : " · ID não identificado"}: “${record.receivedText}”`;
-    if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification("Confirmação recebida no WhatsApp", { body: `${record.name}${record.id ? ` · ID ${record.id}` : ""}: ${record.receivedText}`, tag: `wa-receipt-${waKey}` });
+    const float = $("#recebimentoFloat");
+    if (float) { float.title = `Nova confirmação: ${record.name}${record.phone ? ` · ${record.phone}` : ""} — ${record.receivedText}`; float.dataset.confirmations = String(Number(float.dataset.confirmations || 0) + 1); float.textContent = "RECEBIDO ✓"; }
+    if (notice) notice.textContent = `CONFIRMAÇÃO DE RECEBIMENTO: ${record.name}${record.phone ? ` · ${record.phone}` : " · telefone não identificado"}${record.id ? ` · ID ${record.id}` : " · ID não identificado"}: “${record.receivedText}”`;
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification("Confirmação recebida no WhatsApp", { body: `${record.name}${record.phone ? ` · ${record.phone}` : ""}${record.id ? ` · ID ${record.id}` : ""}: ${record.receivedText}`, tag: `wa-receipt-${waKey}` });
     window.postMessage({ source: "whatsapp-dashboard", type: "receipt-saved", key: waKey }, "*");
   });
   clearForm(); render();
