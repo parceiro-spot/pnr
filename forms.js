@@ -618,10 +618,13 @@
       ? `<div class="forms-alert-new-box"><b>📥 A VALIDAR — prioridade</b><small>Todos os pacotes pendentes aparecem aqui, novos ou não</small></div>${pending.map(c => {
         const time = c.last?.ts instanceof Date ? fmtDT(c.last.ts) : "envio sem data";
         const novo = newIds.has(String(c.id)) ? " · novo" : "";
-        return `<div class="forms-alert-item"><div><b>${esc(c.id)}</b><small>${esc(time)} · A validar${novo}</small></div><span><button type="button" data-alert-view="${esc(c.id)}">Visualizar</button><button type="button" class="remove-id" data-pending-hide="${esc(c.id)}" title="Ocultar este ID">✕</button></span></div>`;
+        const currentValidator = c.last?.validador || "";
+        const validatorExtra = currentValidator && !VALIDADORES.some(v => N(v) === N(currentValidator)) ? `<option value="${esc(currentValidator)}" selected>${esc(currentValidator)}</option>` : "";
+        const statusOptions = statusTabs().filter(([key]) => key !== "TODOS").map(([key, text]) => `<option value="${esc(key)}">${esc(text)}</option>`).join("");
+        return `<div class="forms-alert-item"><div class="forms-alert-data"><b>${esc(c.id)}</b><small><b>Base:</b> ${esc(c.code || c.last?.baseRaw || "Não identificada")} · ${esc(time)} · A validar · ${esc(currentValidator || "Sem validador")}${novo}</small><select data-pending-validator="${esc(c.id)}" title="Alterar validador"><option value="">— Validador —</option>${VALIDADORES.map(v => `<option value="${esc(v)}"${N(v) === N(currentValidator) ? " selected" : ""}>${esc(v)}</option>`).join("")}${validatorExtra}</select><select data-pending-status="${esc(c.id)}" title="Validar ou alterar status"><option value="">— Validar pacote —</option>${statusOptions}</select></div><span><button type="button" data-pending-copy="${esc(c.id)}" title="Copiar ID">⧉ ID</button><button type="button" data-alert-view="${esc(c.id)}">Validar</button><button type="button" class="remove-id" data-pending-hide="${esc(c.id)}" title="Ocultar este ID">✕</button></span></div>`;
       }).join("")}`
       : `<p class="mu">${A ? "Nenhum pacote A VALIDAR pendente." : "Carregue ou atualize o Forms para ver os pacotes A VALIDAR."}</p>`;
-    const publish = pending.map(c => ({ id: c.id, time: c.last?.ts instanceof Date ? fmtDT(c.last.ts) : "envio sem data", photos: c.last?.urls || [] }));
+    const publish = pending.map(c => ({ id: c.id, base: c.code || c.last?.baseRaw || "Base não identificada", validator: c.last?.validador || "", validators: VALIDADORES, statusOptions: statusTabs().filter(([key]) => key !== "TODOS").map(([key, text]) => ({ value: key, label: text })), time: c.last?.ts instanceof Date ? fmtDT(c.last.ts) : "envio sem data", photos: c.last?.urls || [] }));
     const signature = JSON.stringify(publish);
     if (signature !== publishedPendingSignature) {
       publishedPendingSignature = signature;
@@ -681,6 +684,28 @@
     document.querySelector('#nav button[data-v="viewForms"]')?.click();
     render(); openAlertPanel(false);
   };
+  function setPendingValidator(id, validator) {
+    const c = byId.get(String(id));
+    if (!c || c.status !== "PENDENTE" || isHiddenCase(c)) return;
+    const ed = curEdit(c), origV = c.last.edited ? c.last.origVal : c.last.validador;
+    if (N(validator) === N(origV)) { delete ed.v; delete ed.ov; }
+    else { ed.v = String(validator); ed.ov = origV || ""; }
+    keepEdit(c, ed); reanalyze(); render();
+    toast(`Validador de ${c.id} atualizado para ${validator}.`);
+  }
+  function setPendingStatus(id, status, reason = "") {
+    const c = byId.get(String(id));
+    if (!c || c.status !== "PENDENTE" || isHiddenCase(c)) return;
+    const ed = curEdit(c), orig = c.last.edited ? c.last.origStatus : c.last.status;
+    if (normStatus(status) === orig) { delete ed.s; delete ed.os; }
+    else { ed.s = status; ed.os = orig; }
+    if (["RECUSADA", "NÃO SUBIR"].includes(normStatus(status))) {
+      const origMot = c.last.edited ? c.last.origMot : c.last.motRecusa;
+      if (reason !== origMot) { ed.m = reason; ed.om = origMot || ""; }
+    } else { delete ed.m; delete ed.om; }
+    keepEdit(c, ed); reanalyze(); render();
+    toast(`Status de ${c.id} atualizado para ${badge(normStatus(status))}.`);
+  }
   renderAlertItems();
   alertBubble.onclick = () => openAlertPanel(alertPanel.hidden);
   $("#recebimentoFloat").onclick = () => document.querySelector('#nav button[data-v="viewRecebimento"]')?.click();
@@ -699,8 +724,21 @@
   alertItemsBox.onclick = e => {
     const hide = e.target.closest("[data-pending-hide]");
     if (hide) { e.stopPropagation(); removeId(hide.dataset.pendingHide); return; }
+    const cp = e.target.closest("[data-pending-copy]"); if (cp) { copy(cp.dataset.pendingCopy); toast(`ID ${cp.dataset.pendingCopy} copiado.`); return; }
     const b = e.target.closest("[data-alert-view]"); if (b) focusPendingCase(b.dataset.alertView);
   };
+  alertItemsBox.addEventListener("change", e => {
+    const validator = e.target.closest("[data-pending-validator]");
+    if (validator && validator.value) { setPendingValidator(validator.dataset.pendingValidator, validator.value); return; }
+    const status = e.target.closest("[data-pending-status]");
+    if (status && status.value) {
+      let reason = "";
+      if (["RECUSADA", "NÃO SUBIR"].includes(normStatus(status.value))) {
+        reason = prompt(status.value === "RECUSADA" ? "Motivo da recusa:" : "Motivo da análise:", "") || "";
+      }
+      setPendingStatus(status.dataset.pendingStatus, status.value, reason);
+    }
+  });
   window.addEventListener("message", e => {
     if (e.source !== window || !e.data || e.data.source !== "analise-forms-extension") return;
     if (e.data.type === "installed") {
@@ -710,6 +748,8 @@
     }
     if (e.data.type === "focus-case" && e.data.id) focusPendingCase(e.data.id);
     if (e.data.type === "hide-pending" && e.data.id) removeId(e.data.id);
+    if (e.data.type === "set-pending-validator" && e.data.id && e.data.validator) setPendingValidator(e.data.id, e.data.validator);
+    if (e.data.type === "set-pending-status" && e.data.id && e.data.status) setPendingStatus(e.data.id, e.data.status, e.data.reason || "");
     if (e.data.type === "refresh-forms" && liveRefreshButton && !liveRefreshButton.disabled) liveRefreshButton.click();
   });
   const liveUrlInput = $("#fLiveUrl"), liveSaveButton = $("#fLiveSave"), livePauseButton = $("#fLivePause"), liveRefreshButton = $("#fLiveRefresh"), liveStatus = $("#fLiveStatus");

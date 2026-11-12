@@ -33,19 +33,20 @@
 </div>
 </section>
 <section id="viewRecebimento" hidden>
-<p class="sub">Cole a mensagem enviada ao cliente ou a resposta recebida. O sistema identifica automaticamente o nome, o ID de 11 dígitos e, quando estiver escrito, o telefone. Base, motorista, status e validador ficam para você preencher.</p>
-<details class="card float-config"><summary>⚙ Configurações dos botões flutuantes</summary><div class="float-config-options"><label><input type="checkbox" data-float-setting="formsButton"> Mostrar botão PNR</label><label><input type="checkbox" data-float-setting="formsWindow"> Permitir janela/lista PNR</label><label><input type="checkbox" data-float-setting="receiptButton"> Mostrar botão RECEBIMENTO</label></div><p class="mu">Se ocultar um botão, você pode reativá-lo aqui ou nas mesmas configurações da aba Análise Forms.</p></details>
+<p class="sub">Confirmações como “recebi o produto” podem ser captadas automaticamente pela extensão WhatsApp e adicionadas à tabela. Também é possível colar mensagens manualmente: nome, ID de 11 dígitos e telefone são identificados quando estiverem escritos; base, motorista, status e validador ficam para você preencher.</p>
+<details class="card float-config"><summary>⚙ Configurações dos botões flutuantes</summary><div class="float-config-options"><label><input type="checkbox" data-float-setting="formsButton"> Mostrar botão FORMS</label><label><input type="checkbox" data-float-setting="formsWindow"> Permitir janela/lista FORMS</label><label><input type="checkbox" data-float-setting="receiptButton"> Mostrar botão RECEBIMENTO</label></div><p class="mu">Se ocultar um botão, você pode reativá-lo aqui ou nas mesmas configurações da aba Análise Forms.</p></details>
 <div class="receb-grid">
   <div class="card receb-import"><h2>＋ Novo recebimento</h2><label>Mensagem do WhatsApp<textarea id="rMessage" rows="9" placeholder="Cole aqui a mensagem, por exemplo:\nPrezado cliente Joseane Andrade...\nID: 48436366918"></textarea></label><div class="frow"><button id="rParse" class="pri" type="button">Identificar e adicionar</button><button id="rClearMessage" type="button">Limpar</button></div><div id="rParseStatus" class="mu"></div></div>
   <div class="card receb-fields"><h2>Campos preenchidos</h2><div class="receb-form-grid"><label>Nome do cliente<input id="rName" type="text"></label><label>Telefone<input id="rPhone" type="text" placeholder="(00) 00000-0000"></label><label>ID do pacote<input id="rId" type="text" inputmode="numeric"></label><label>Base<input id="rBase" type="text" placeholder="Ex.: SMG3"></label><label>Motorista<input id="rDriver" type="text"></label><label>Status<select id="rStatus"></select></label><label>Validador<select id="rValidator"></select></label></div><div class="frow"><button id="rSave" class="pri" type="button">Salvar recebimento</button><button id="rCancel" type="button">Cancelar</button></div></div>
 </div>
 <div class="receb-toolbar"><div><b>Recebimentos registrados</b><span id="rCount" class="mu"></span></div><input id="rSearch" type="search" placeholder="Buscar nome, ID, base ou motorista"><button id="rCopy" type="button">⧉ Copiar selecionados</button><button id="rExport" type="button">⬇ Baixar CSV</button></div>
+<div id="rWhatsAppNotice" class="receb-whatsapp-notice" role="status" aria-live="polite"></div>
 <div class="receb-hint mu">Use Ctrl+clique nas linhas para selecionar. Depois use Ctrl+C ou “Copiar selecionados”.</div><div id="rTable" class="receb-table-wrap"></div>
 </section>
 <section id="viewForms">
 <p class="sub">Suba o Forms baixado em <b>.ods</b> (ou .xlsx / .csv). O site junta as respostas por ID, conta quantas vezes cada pacote foi <b>recusado</b> e monta a fila para você trabalhar por regional. Em <b>Abrir Logistic</b> escolha <b>Normal</b> (copia o ID e abre o Logistic) ou <b>Anônimo</b> (copia o link para você colar numa janela anônima).</p>
 <nav class="nav form-nav" id="formsNav"><button data-form-view="formAnalysisTab" class="on">📋 Análise Forms</button><button data-form-view="formMessageTab">💬 Mensagem Logistic</button></nav>
-<details class="card float-config"><summary>⚙ Configurações dos botões flutuantes</summary><div class="float-config-options"><label><input type="checkbox" data-float-setting="formsButton"> Mostrar botão PNR</label><label><input type="checkbox" data-float-setting="formsWindow"> Permitir janela/lista PNR</label><label><input type="checkbox" data-float-setting="receiptButton"> Mostrar botão RECEBIMENTO</label></div><p class="mu">Mesmo se ocultar os botões, esta configuração permanece disponível para reativá-los. As escolhas também aparecem na aba Análise Recebimento.</p></details>
+<details class="card float-config"><summary>⚙ Configurações dos botões flutuantes</summary><div class="float-config-options"><label><input type="checkbox" data-float-setting="formsButton"> Mostrar botão FORMS</label><label><input type="checkbox" data-float-setting="formsWindow"> Permitir janela/lista FORMS</label><label><input type="checkbox" data-float-setting="receiptButton"> Mostrar botão RECEBIMENTO</label></div><p class="mu">Mesmo se ocultar os botões, esta configuração permanece disponível para reativá-los. As escolhas também aparecem na aba Análise Recebimento.</p></details>
 <div id="formAnalysisTab">
 <div class="live-refresh" aria-label="Controles do Forms Ao Vivo">
 <label class="live-url-label" for="fLiveUrl">Link do Forms Ao Vivo (CSV)<input id="fLiveUrl" type="url" inputmode="url" autocomplete="url" placeholder="Cole aqui o link publicado do CSV"></label>
@@ -84,7 +85,7 @@
 <button id="recebimentoFloat" class="recebimento-float" type="button" title="Abrir Análise Recebimento">RECEBIMENTO</button>
 <div id="formsAlertWidget" class="forms-alert-widget" aria-live="polite">
 <button id="formsAlertBubble" class="forms-alert-bubble" type="button" aria-expanded="false" aria-controls="formsAlertPanel" title="Abrir avisos do Forms">
-  <span class="forms-alert-icon" aria-hidden="true">⌁</span><span class="forms-alert-badge" id="formsAlertCount" hidden>0</span>
+  <span class="forms-alert-icon" aria-hidden="true">FORMS</span><span class="forms-alert-badge" id="formsAlertCount" hidden>0</span>
 </button>
 <section id="formsAlertPanel" class="forms-alert-panel" hidden aria-label="Avisos do Forms">
   <div class="forms-alert-head"><div><strong>A validar prioritário</strong><span id="formsAlertSummary">Nenhum pacote A validar</span></div><button id="formsAlertClose" type="button" class="mini" title="Fechar">✕</button></div>

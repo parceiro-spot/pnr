@@ -59,4 +59,6 @@
   });
   apply();
   window.postMessage({ source: "analise-forms", type: "set-extension-settings", settings: { bubble: settings.formsButton, window: settings.formsWindow } }, "*");
+  const requestedView = new URLSearchParams(location.search).get("view");
+  if (requestedView === "recebimento") document.querySelector('#nav button[data-v="viewRecebimento"]')?.click();
 })();
