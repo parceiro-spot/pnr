@@ -17,7 +17,7 @@ chrome.runtime.onStartup.addListener(() => injectIntoOpenWebTabs());
 async function readState() {
   const data = await chrome.storage.local.get([KEY, SOURCE_KEY, SETTINGS_KEY]);
   return {
-    items: Array.isArray(data[KEY]) ? data[KEY] : [],
+    items: Array.isArray(data[KEY]) ? data[KEY].filter(item => item && item.status === "PENDENTE") : [],
     source: data[SOURCE_KEY] || null,
     settings: { ...DEFAULT_SETTINGS, ...(data[SETTINGS_KEY] || {}) }
   };
@@ -34,6 +34,17 @@ async function focusSource(id) {
     } catch (e) {}
   }
   if (source && source.url) await chrome.tabs.create({ url: source.url });
+}
+
+async function refreshSource() {
+  const { source } = await readState();
+  if (!source || source.tabId == null) return { ok: false, message: "Abra o Análise Forms primeiro." };
+  try {
+    await chrome.tabs.sendMessage(source.tabId, { type: "refresh-forms" });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, message: "Recarregue a aba do Análise Forms para conectar o botão Atualizar." };
+  }
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -83,6 +94,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "view-alert") {
       await focusSource(message.id);
       sendResponse({ ok: true });
+      return;
+    }
+    if (message.type === "refresh-forms") {
+      sendResponse(await refreshSource());
     }
   })().catch(error => sendResponse({ error: String(error) }));
   return true;

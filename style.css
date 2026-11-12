@@ -241,6 +241,7 @@ body.dates-hidden .date-field,body.dates-hidden .date-context{color:#7b8581!impo
 .forms-alert-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:14px 15px 10px;border-bottom:1px solid var(--ln)}
 .forms-alert-head strong{display:block;font-size:16px}.forms-alert-head span{display:block;color:var(--mu);font-size:12px;margin-top:2px}
 .forms-alert-items{overflow:auto;padding:8px 10px;min-height:70px}.forms-alert-items p{margin:12px 5px}
+.forms-alert-new-box{margin:2px 0 6px;padding:9px 8px;border-radius:8px;background:#fff1d6;border:1px solid #f0c670;color:#7a5700}.forms-alert-new-box b{display:block;font-size:12px}.forms-alert-new-box small{font-size:11px;color:#9a5b00}
 .forms-alert-item{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:10px 7px;border-bottom:1px solid var(--ln)}
 .forms-alert-item:last-child{border-bottom:0}.forms-alert-item b{font-family:ui-monospace,Consolas,monospace}.forms-alert-item small{display:block;color:var(--mu);font-size:11px;margin-top:2px}
 .forms-alert-item button{padding:5px 8px;font-size:12px;white-space:nowrap}

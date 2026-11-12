@@ -582,6 +582,7 @@
   let alertBaselineReady = store.get("forms_alert_baseline", false) === true;
   let alertItems = store.get("forms_alert_items", []);
   if (!Array.isArray(alertItems)) alertItems = [];
+  alertItems = alertItems.filter(item => item && item.status === "PENDENTE");
   const alertBubble = $("#formsAlertBubble"), alertPanel = $("#formsAlertPanel"), alertCount = $("#formsAlertCount"), alertItemsBox = $("#formsAlertItems"), alertSummary = $("#formsAlertSummary");
   const alertKey = (r, C) => {
     const id = C && C.id ? extractIds(r[C.id]).join(",") : "";
@@ -591,7 +592,7 @@
   const alertInfo = (r, C) => {
     const ids = C && C.id ? extractIds(r[C.id]) : [];
     const d = C && C.ts ? parseTs(r[C.ts]) : null;
-    return { id: ids[0] || "ID não identificado", time: d ? fmtDT(d) : "novo envio", status: C && C.status ? normStatus(r[C.status]) : "PENDENTE" };
+    return { id: ids[0] || "ID não identificado", time: d ? fmtDT(d) : "novo envio", status: C && C.status ? normStatus(r[C.status]) : "PENDENTE", photos: C && C.evid ? URLS(r[C.evid]) : [] };
   };
   const saveAlertState = () => {
     store.set("forms_alert_seen_keys", [...alertSeenKeys].slice(-5000));
@@ -603,8 +604,8 @@
     alertCount.hidden = !count;
     alertCount.textContent = count > 99 ? "99+" : String(count);
     alertBubble.classList.toggle("has-new", count > 0);
-    alertSummary.textContent = count ? `${count} envio${count === 1 ? "" : "s"} novo${count === 1 ? "" : "s"}` : "Nenhum aviso novo";
-    alertItemsBox.innerHTML = count ? alertItems.map((x, i) => `<div class="forms-alert-item"><div><b>${esc(x.id)}</b><small>${esc(x.time)} · ${esc(x.status)}</small></div><button type="button" data-alert-view="${i}">Visualizar</button></div>`).join("") : '<p class="mu">Os novos envios aparecerão aqui.</p>';
+    alertSummary.textContent = count ? `${count} pacote${count === 1 ? "" : "s"} novo${count === 1 ? "" : "s"}` : "Nenhum pacote novo";
+    alertItemsBox.innerHTML = count ? `<div class="forms-alert-new-box"><b>📥 Novos pacotes A validar</b><small>Entraram desde a última atualização manual</small></div>${alertItems.map((x, i) => `<div class="forms-alert-item"><div><b>${esc(x.id)}</b><small>${esc(x.time)} · A validar</small></div><button type="button" data-alert-view="${i}">Visualizar</button></div>`).join("")}` : '<p class="mu">A caixa de novos A validar está vazia.</p>';
   };
   const openAlertPanel = on => { alertPanel.hidden = !on; alertBubble.setAttribute("aria-expanded", String(on)); };
   const beep = () => {
@@ -627,7 +628,11 @@
     const novos = [];
     for (const r of rows || []) {
       const key = alertKey(r, C); if (alertSeenKeys.has(key)) continue;
-      alertSeenKeys.add(key); novos.push(alertInfo(r, C));
+      alertSeenKeys.add(key);
+      const info = alertInfo(r, C);
+      // Avisar somente novos pacotes que ainda estão em A validar.
+      // Registros com status vazio também são normalizados como PENDENTE.
+      if (info.status === "PENDENTE") novos.push(info);
     }
     if (!novos.length) { saveAlertState(); return; }
     // Mostra primeiro os mais recentes e não deixa a bolinha crescer indefinidamente.
@@ -665,6 +670,7 @@
       const widget = $("#formsAlertWidget"); if (widget) widget.hidden = true;
     }
     if (e.data.type === "focus-case" && e.data.id) focusAlertCase(e.data.id);
+    if (e.data.type === "refresh-forms" && liveRefreshButton && !liveRefreshButton.disabled) liveRefreshButton.click();
   });
   const liveUrlInput = $("#fLiveUrl"), liveSaveButton = $("#fLiveSave"), livePauseButton = $("#fLivePause"), liveRefreshButton = $("#fLiveRefresh"), liveStatus = $("#fLiveStatus");
   const setLiveStatus = (kind, text) => {

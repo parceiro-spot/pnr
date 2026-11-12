@@ -1,6 +1,6 @@
 # Extensão Análise Forms — Avisos Flutuantes
 
-Esta extensão mostra uma bolinha **PNR sobre qualquer página web normal do Chrome/Edge**, não apenas no Análise Forms. Ela recebe os avisos quando o projeto Análise Forms detectar novos envios depois de uma atualização manual.
+Esta extensão mostra uma bolinha **PNR sobre qualquer página web normal do Chrome/Edge**, não apenas no Análise Forms. Ela recebe avisos somente quando o projeto Análise Forms detectar novos envios **A validar** depois de uma atualização manual.
 
 ## Instalação no Chrome ou Edge
 
@@ -24,3 +24,9 @@ Na primeira vez, clique em **Ativar aviso do navegador** na janela da bolinha ou
 Ao clicar na bolinha, a extensão abre uma janela menor na própria página atual, sem trocar para o Análise Forms. Clique em **Visualizar** para ver os dados do envio. A janela pode ser aumentada ou reduzida arrastando o canto inferior direito.
 
 No botão **⚙ Configurar** da janela, ou clicando no ícone da extensão na barra do navegador, é possível desligar separadamente o **Botão flutuante**, a **Janela flutuante** e a **Notificação normal do navegador**. Se o botão flutuante for desligado, as opções continuam acessíveis pelo ícone da extensão.
+
+A janela tem a caixa **Novos A validar**. O Forms que já estava carregado na primeira abertura serve apenas como base e não aparece nessa caixa. Só entram nela os pacotes novos detectados numa atualização manual posterior e que estejam A validar.
+
+A janela também tem **↻ Atualizar**, que aciona o mesmo botão manual do Análise Forms, sem criar atualização automática. Na caixa, use **Ctrl+clique** para selecionar IDs e depois **Ctrl+C** ou **⧉ Copiar selecionados** para copiar uma ID por linha.
+
+Quando a resposta tiver evidência vinculada, aparece **📷 Foto**. No detalhe do pacote também ficam os links **Ver foto**, que abrem a evidência em uma nova aba.
