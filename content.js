@@ -6,7 +6,7 @@
   const root = document.createElement("div");
   root.id = ROOT_ID;
   root.innerHTML = `
-    <button id="afe-bubble" title="Novos envios do Forms" aria-label="Novos envios do Forms"><span>⌁</span><b id="afe-count">0</b></button>
+    <button id="afe-bubble" title="Novos envios do Forms" aria-label="Novos envios do Forms"><span>PNR</span><b id="afe-count">0</b></button>
     <section id="afe-panel" hidden aria-label="Avisos do Forms">
       <header><div><strong>Novo Forms</strong><small id="afe-summary">Nenhum aviso novo</small></div><button id="afe-close" title="Fechar">×</button></header>
       <div id="afe-list"><p>Os novos envios aparecerão aqui.</p></div>
@@ -24,7 +24,7 @@
   style.textContent = `
     #${ROOT_ID}{all:initial;position:fixed;right:20px;bottom:20px;z-index:2147483647;font-family:Arial,sans-serif;color:#1d2b2a}
     #${ROOT_ID} *{box-sizing:border-box}
-    #afe-bubble{position:relative;width:58px;height:58px;border:0;border-radius:50%;background:#c2410c;color:#fff;box-shadow:0 8px 24px #0005;cursor:pointer;font:900 30px Arial}
+    #afe-bubble{position:relative;width:58px;height:58px;border:0;border-radius:50%;background:#c2410c;color:#fff;box-shadow:0 8px 24px #0005;cursor:pointer;font:900 17px Arial;letter-spacing:.02em}
     #afe-bubble:hover{transform:translateY(-2px)} #afe-bubble.has-new{animation:afe-pulse 1.6s infinite}
     #afe-count{position:absolute;right:-3px;top:-5px;min-width:23px;height:23px;padding:2px 5px;border:2px solid #fff;border-radius:999px;background:#d9463b;color:#fff;font:800 12px/15px Arial}
     #afe-count[hidden]{display:none}

@@ -1,6 +1,6 @@
 # Extensão Análise Forms — Avisos Flutuantes
 
-Esta extensão mostra uma bolinha sobre qualquer página do Chrome/Edge. Ela recebe os avisos quando o projeto Análise Forms detectar novos envios depois de uma atualização manual.
+Esta extensão mostra uma bolinha **PNR sobre qualquer página web normal do Chrome/Edge**, não apenas no Análise Forms. Ela recebe os avisos quando o projeto Análise Forms detectar novos envios depois de uma atualização manual.
 
 ## Instalação no Chrome ou Edge
 
@@ -9,8 +9,11 @@ Esta extensão mostra uma bolinha sobre qualquer página do Chrome/Edge. Ela rec
 3. Clique em **Carregar sem compactação** / **Load unpacked**.
 4. Selecione esta pasta `extension`.
 5. Abra ou atualize a página do Análise Forms.
+6. Para a bolinha aparecer em abas que já estavam abertas, recarregue cada aba uma vez (`Ctrl+R`). Em novas abas ela aparece automaticamente.
 
-A bolinha ficará no canto inferior direito inclusive quando você estiver no Logistic ou em outra aba. No Análise Forms, clique em **Atualizar Forms Ao Vivo** normalmente; a extensão não faz consultas automáticas.
+A bolinha PNR ficará no canto inferior direito inclusive quando você estiver no Logistic, Google ou em outra página web. No Análise Forms, clique em **Atualizar Forms Ao Vivo** normalmente; a extensão não faz consultas automáticas.
+
+O Chrome/Edge não permite extensões sobre páginas internas como `chrome://extensions`, `edge://extensions`, a Chrome Web Store ou algumas páginas de PDF. Isso é uma limitação de segurança do navegador; em sites com endereço começando por `http://` ou `https://`, a bolinha funciona.
 
 Na primeira vez, clique em **Ativar aviso do navegador** na janela da bolinha ou permita as notificações do navegador. O botão **Visualizar** volta para a aba que originou o aviso e abre o pacote pelo ID.
 
