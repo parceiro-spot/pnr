@@ -20,6 +20,7 @@
       <footer><button id="afe-refresh">↻ Atualizar</button><button id="afe-copy">⧉ Copiar selecionados</button><button id="afe-read">Marcar novos como lidos</button><button id="afe-config">⚙ Configurar</button></footer>
     </section>`;
   document.documentElement.appendChild(root);
+  const hideStyle = document.createElement("style"); hideStyle.textContent = `#${ROOT_ID}{display:none!important}`; document.documentElement.appendChild(hideStyle);
   const style = document.createElement("style");
   style.textContent = `
     #${ROOT_ID}{all:initial;position:fixed;right:20px;bottom:20px;z-index:2147483647;font-family:Arial,sans-serif;color:#1d2b2a}

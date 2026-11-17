@@ -2,7 +2,7 @@ const KEY = "analise_forms_alerts";
 const SOURCE_KEY = "analise_forms_source";
 const SETTINGS_KEY = "analise_forms_settings";
 const PENDING_KEY = "analise_forms_pending";
-const DEFAULT_SETTINGS = { bubble: true, window: true, browserNotification: true };
+const DEFAULT_SETTINGS = { bubble: false, window: false, browserNotification: true };
 
 async function injectIntoOpenWebTabs() {
   const tabs = await chrome.tabs.query({});
