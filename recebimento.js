@@ -7,7 +7,7 @@
   const STATUS = ["A VALIDAR", "ANULADA", "EM REVISÃO", "PARA FATURAMENTO", "COMPROVANTE CARREGADO", "SEM RETORNO DO CLIENTE"];
   const VAL_KEY = "pnr_recebimento_validadores";
   const VAL_DEFAULT = ["LUIZA FRANÇA", "KETHELLY OLIVEIRA", "EDUARDA CARVALHO", "VITÓRIA NASCIMENTO"];
-  let VALIDADORES = (() => { try { const x = JSON.parse(localStorage.getItem(VAL_KEY) || "null"); return Array.isArray(x) ? x.filter(v => typeof v === "string" && v.trim()) : VAL_DEFAULT.slice(); } catch (e) { return VAL_DEFAULT.slice(); } })();
+  let VALIDADORES = (() => { try { const x = JSON.parse(localStorage.getItem(VAL_KEY) || "null"); return Array.isArray(x) ? x.filter(v => typeof v === "string" && v.trim() && norm(v) !== "VITOR MENDES") : VAL_DEFAULT.slice(); } catch (e) { return VAL_DEFAULT.slice(); } })();
   const saveValidators = () => { try { localStorage.setItem(VAL_KEY, JSON.stringify(VALIDADORES)); } catch (e) {} };
   const todayISO = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const fmtDate = iso => { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${m[3]}/${m[2]}/${m[1]}` : ""; };

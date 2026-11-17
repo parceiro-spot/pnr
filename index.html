@@ -2,7 +2,7 @@
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Análise PNR</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=20261117c">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -35,7 +35,7 @@
 <section id="viewRecebimento" hidden>
 <p class="sub">Confirmações como “recebi o produto” podem ser captadas automaticamente pela extensão WhatsApp e adicionadas à tabela. Também é possível colar mensagens manualmente: nome, ID de 11 dígitos e telefone são identificados quando estiverem escritos; base, motorista, status e validador ficam para você preencher.</p>
 <div class="receb-grid">
-  <div class="card receb-import"><h2>＋ Novo recebimento</h2><label>COLE AQUI TODA A MENSAGEM<textarea id="rPaste" rows="4" placeholder="Cole aqui a conversa inteira do WhatsApp (veja o exemplo abaixo)"></textarea></label><details class="receb-example"><summary>Ver exemplo de como colar</summary><pre>[14:51, 16/11/2026] Seu Nome: Prezado cliente Maria da Silva
+  <div class="card receb-import"><h2>＋ Novo recebimento <small class="mu" title="Se não aparecer esta marca, o navegador está com arquivo antigo: atualize com Ctrl+F5">v3</small></h2><label>COLE AQUI TODA A MENSAGEM<textarea id="rPaste" rows="4" placeholder="Cole aqui a conversa inteira do WhatsApp (veja o exemplo abaixo)"></textarea></label><details class="receb-example"><summary>Ver exemplo de como colar</summary><pre>[14:51, 16/11/2026] Seu Nome: Prezado cliente Maria da Silva
 Tudo bem? Espero que sim!
 ...
 ID: 12345678901
@@ -109,7 +109,7 @@ Consta uma informação em nosso sistema que não recebeu.
 <div id="dlInfo" class="msg"></div>
 <div class="frow"><button id="dlXlsx" class="pri">⬇ Baixar .xlsx com carimbo completo</button><button id="dlCopy">⧉ Copiar a partir do Validador</button><button id="dlClose">Fechar ✕</button></div>
 </div></div>
-<script src="script.js"></script>
-<script src="forms.js"></script>
-<script src="recebimento.js"></script>
+<script src="script.js?v=20261117c"></script>
+<script src="forms.js?v=20261117c"></script>
+<script src="recebimento.js?v=20261117c"></script>
 </body></html>
