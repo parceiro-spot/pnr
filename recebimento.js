@@ -13,7 +13,7 @@
   const fmtDate = iso => { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${m[3]}/${m[2]}/${m[1]}` : ""; };
   const rowDate = r => r.date || (r.receivedAt || r.updatedAt ? todayISO(new Date(r.receivedAt || r.updatedAt)) : "");
   let rows = (() => { try { const x = JSON.parse(localStorage.getItem(KEY) || "[]"); return Array.isArray(x) ? x : []; } catch (e) { return []; } })();
-  let editing = null, selected = new Set();
+  let editing = null, selected = new Set(), convo = [];
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(rows)); } catch (e) {} };
   const setOptions = (el, values, blank = false) => { $(el).innerHTML = (blank ? '<option value="">— Selecione —</option>' : "") + values.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join(""); };
   setOptions("#rStatus", STATUS);
@@ -47,7 +47,7 @@
     const msgs = []; let cur = null;
     raw.split(/\r?\n/).forEach(line => {
       const m = line.match(HEAD);
-      if (m) { cur = { sender: (m[3] || m[7] || "").trim(), lines: [(m[4] ?? m[8] ?? "").trim()] }; msgs.push(cur); }
+      if (m) { cur = { sender: (m[3] || m[7] || "").trim(), time: m[1] || m[6] || "", date: m[2] || m[5] || "", lines: [(m[4] ?? m[8] ?? "").trim()] }; msgs.push(cur); }
       else if (cur) cur.lines.push(line.trim());
     });
     msgs.forEach(x => { x.text = x.lines.join("\n").trim(); });
@@ -67,7 +67,24 @@
     const clientMsg = msgs.find(m => m !== first && isPhoneSender(m.sender));
     const senderPhone = clientMsg ? clientMsg.sender : (first && isPhoneSender(first.sender) ? first.sender : "");
     const phone = senderPhone ? senderPhone.replace(/\s+/g, " ").trim() : cleanPhone(raw.replace(/\d{11}/g, " "));
-    return { name, phone, id, date, raw, multiple: msgs.length > 1 };
+    return { name, phone, id, date, raw, multiple: msgs.length > 1, messages: msgs.filter(m => m.text).map(m => ({ sender: m.sender, time: m.time, date: m.date, text: m.text })) };
+  }
+  // ---- Conversa formatada (estilo WhatsApp) ----
+  const isClientSender = n => isPhoneSender(n || "");
+  const waText = t => String(t || "").split(/\r?\n/).map(l => l.trim()).map(l => !l ? '<div class="wa-gap"></div>' : `<div>${esc(l).replace(/^(Prezado cliente.*)$/i, "<b>$1</b>").replace(/^(ID(?:\s+DO\s+(?:PACOTE|ENVIO))?\s*[:#-]?\s*\d{11})$/i, "<b>$1</b>")}</div>`).join("");
+  const waBubble = (m, side) => `<div class="wa-msg wa-${side}"><div class="wa-meta"><b>${esc(m.sender || (side === "client" ? "Cliente" : "Mensagem enviada"))}</b>${m.time || m.date ? `<span>${esc([m.time, m.date].filter(Boolean).join(" · "))}</span>` : ""}</div><div class="wa-text">${waText(m.text)}</div></div>`;
+  const waChat = list => `<div class="wa-chat">${list.map(m => waBubble(m, isClientSender(m.sender) ? "client" : "own")).join("")}</div>`;
+  const firstOf = list => list.find(m => /prezado\s+cliente/i.test(m.text)) || list[0] || null;
+  function renderMessageView() {
+    const text = $("#rMessage").value.trim(), f = firstOf(convo);
+    $("#rMessageView").innerHTML = text ? `<div class="wa-chat">${waBubble({ sender: f?.sender || "", time: f?.time || "", date: f?.date || "", text }, "own")}</div>` : '<div class="wa-empty">A primeira mensagem aparece aqui, já formatada, depois de colar acima.</div>';
+  }
+  function conversationOf(r) {
+    if (Array.isArray(r.conversation) && r.conversation.length) return r.conversation;
+    const list = [];
+    if (r.message && r.message !== r.receivedText) list.push({ sender: "", time: "", date: "", text: r.message });
+    if (r.receivedText) list.push({ sender: r.phone || r.chat || "Cliente", time: "", date: "", text: r.receivedText });
+    return list;
   }
   function fillParsed() {
     const text = $("#rPaste").value.trim() || $("#rMessage").value.trim();
@@ -75,14 +92,15 @@
     const parsed = parseMessage(text);
     $("#rName").value = parsed.name; $("#rPhone").value = parsed.phone; $("#rId").value = parsed.id;
     if (parsed.raw) $("#rMessage").value = parsed.raw;
+    convo = parsed.messages; renderMessageView();
     if (parsed.id) $("#rPaste").value = "";
     $("#rParseStatus").textContent = parsed.id ? `ID ${parsed.id} identificado${parsed.multiple ? " (usei só a primeira mensagem)" : ""}${parsed.name ? ` · ${parsed.name}` : ""}${parsed.phone ? ` · ${parsed.phone}` : ""}. Complete os campos e salve.` : "Não encontrei um ID de 11 dígitos. Confira a mensagem colada.";
     if (parsed.id) $("#rBase").focus();
   }
-  function clearForm() { editing = null; ["rName","rPhone","rId","rBase","rDriver"].forEach(id => $("#" + id).value = ""); $("#rStatus").value = "A VALIDAR"; fillValidators(); $("#rDate").value = todayISO(); $("#rMessage").value = ""; $("#rPaste").value = ""; $("#rParseStatus").textContent = ""; $("#rSave").textContent = "Salvar recebimento"; }
+  function clearForm() { editing = null; ["rName","rPhone","rId","rBase","rDriver"].forEach(id => $("#" + id).value = ""); $("#rStatus").value = "A VALIDAR"; fillValidators(); $("#rDate").value = todayISO(); $("#rMessage").value = ""; $("#rPaste").value = ""; convo = []; renderMessageView(); $("#rMessage").hidden = true; $("#rParseStatus").textContent = ""; $("#rSave").textContent = "Salvar recebimento"; }
   function formData() {
     const old = editing ? rows.find(x => x.key === editing) || {} : {};
-    return { ...old, id: $("#rId").value.replace(/\D/g, "").slice(0, 11), name: $("#rName").value.trim(), phone: $("#rPhone").value.trim(), base: $("#rBase").value.trim(), driver: $("#rDriver").value.trim(), date: $("#rDate").value || todayISO(), status: $("#rStatus").value, validator: $("#rValidator").value, message: $("#rMessage").value.trim(), updatedAt: Date.now() };
+    return { ...old, id: $("#rId").value.replace(/\D/g, "").slice(0, 11), name: $("#rName").value.trim(), phone: $("#rPhone").value.trim(), base: $("#rBase").value.trim(), driver: $("#rDriver").value.trim(), date: $("#rDate").value || todayISO(), status: $("#rStatus").value, validator: $("#rValidator").value, message: $("#rMessage").value.trim(), conversation: convo, updatedAt: Date.now() };
   }
   const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
   const monthKey = r => (rowDate(r) || "").slice(0, 7) || "sem-data";
@@ -91,7 +109,7 @@
   const valueOf = r => r.validator && r.validator !== "— Sem validador —" ? r.validator : "";
   let openMonths = new Set(), selMonths = new Set(), previewKey = null;
   const rowHtml = r => `<tr data-rid="${esc(r.key)}" class="${selected.has(r.key) ? "selected" : ""}${previewKey === r.key ? " previewing" : ""}"><td>${esc(fmtDate(rowDate(r))) || "—"}</td><td>${esc(r.name) || "—"}</td><td>${esc(r.phone) || "—"}</td><td><b>${esc(r.id) || "—"}</b></td><td><span class="receb-status" data-status="${esc(r.status)}">${esc(r.status)}</span></td><td>${esc(r.base) || "—"}</td><td>${esc(r.driver) || "—"}</td><td>${esc(valueOf(r)) || "—"}</td><td title="${esc(r.chat || "")}">${esc(r.receivedText || "")}</td><td><button type="button" data-edit="${esc(r.key)}">Editar</button></td></tr>`
-    + (previewKey === r.key ? `<tr class="receb-preview-row"><td colspan="10"><div class="receb-preview"><div class="receb-preview-grid"><div><small>Cliente</small><b>${esc(r.name) || "—"}</b></div><div><small>Telefone</small><b>${esc(r.phone) || "—"}</b></div><div><small>ID</small><b>${esc(r.id) || "—"}</b></div><div><small>Data</small><b>${esc(fmtDate(rowDate(r))) || "—"}</b></div><div><small>Base</small><b>${esc(r.base) || "—"}</b></div><div><small>Motorista</small><b>${esc(r.driver) || "—"}</b></div><div><small>Status</small><b>${esc(r.status) || "—"}</b></div><div><small>Validador</small><b>${esc(valueOf(r)) || "—"}</b></div></div>${r.message ? `<small>Mensagem enviada</small><pre>${esc(r.message)}</pre>` : ""}${r.receivedText ? `<small>Resposta do cliente</small><pre>${esc(r.receivedText)}</pre>` : ""}<div class="frow"><button type="button" class="pri" data-edit="${esc(r.key)}">Editar</button><button type="button" data-pclose="1">Fechar prévia</button></div></div></td></tr>` : "");
+    + (previewKey === r.key ? `<tr class="receb-preview-row"><td colspan="10"><div class="receb-preview"><div class="receb-preview-grid"><div><small>Cliente</small><b>${esc(r.name) || "—"}</b></div><div><small>Telefone</small><b>${esc(r.phone) || "—"}</b></div><div><small>ID</small><b>${esc(r.id) || "—"}</b></div><div><small>Data</small><b>${esc(fmtDate(rowDate(r))) || "—"}</b></div><div><small>Base</small><b>${esc(r.base) || "—"}</b></div><div><small>Motorista</small><b>${esc(r.driver) || "—"}</b></div><div><small>Status</small><b>${esc(r.status) || "—"}</b></div><div><small>Validador</small><b>${esc(valueOf(r)) || "—"}</b></div></div>${conversationOf(r).length ? `<small>Conversa</small>${waChat(conversationOf(r))}` : ""}<div class="frow"><button type="button" class="pri" data-edit="${esc(r.key)}">Editar</button><button type="button" data-pclose="1">Fechar prévia</button></div></div></td></tr>` : "");
   const tableHtml = list => `<div class="receb-table-wrap"><table class="receb-table"><thead><tr><th>Data</th><th>Cliente</th><th>Telefone</th><th>ID</th><th>Status</th><th>Base</th><th>Motorista</th><th>Validador</th><th>Confirmação WhatsApp</th><th></th></tr></thead><tbody>${list.map(rowHtml).join("")}</tbody></table></div>`;
   function updateDownloadButtons() {
     const keys = [...new Set(rows.map(monthKey))];
@@ -114,12 +132,14 @@
   const editRecord = key => {
     const r = rows.find(x => x.key === key); if (!r) return;
     editing = r.key; ["Name","Phone","Id","Base","Driver"].forEach(k => $("#r" + k).value = r[k.toLowerCase()] || "");
-    $("#rStatus").value = r.status; fillValidators(r.validator || ""); $("#rDate").value = rowDate(r) || todayISO(); $("#rPaste").value = ""; $("#rMessage").value = r.message || r.receivedText || ""; $("#rSave").textContent = "Salvar alterações";
+    $("#rStatus").value = r.status; fillValidators(r.validator || ""); $("#rDate").value = rowDate(r) || todayISO(); $("#rPaste").value = ""; $("#rMessage").value = r.message || r.receivedText || ""; convo = Array.isArray(r.conversation) ? r.conversation : []; renderMessageView(); $("#rSave").textContent = "Salvar alterações";
     $("#rName").scrollIntoView({ behavior: "smooth", block: "center" });
   };
+  $("#rMessage").hidden = true; $("#rMessage").addEventListener("input", renderMessageView);
+  $("#rMsgEdit").onclick = () => { const t = $("#rMessage"); t.hidden = !t.hidden; if (!t.hidden) t.focus(); };
   $("#rParse").onclick = fillParsed;
   $("#rPaste").addEventListener("paste", () => setTimeout(fillParsed, 60));
-  $("#rClearMessage").onclick = () => { $("#rPaste").value = ""; $("#rMessage").value = ""; $("#rParseStatus").textContent = ""; };
+  $("#rClearMessage").onclick = () => { $("#rPaste").value = ""; $("#rMessage").value = ""; convo = []; renderMessageView(); $("#rParseStatus").textContent = ""; };
   $("#rSave").onclick = () => { const r = formData(); if (r.id.length !== 11) { $("#rParseStatus").textContent = "Informe um ID válido com 11 dígitos."; return; } if (!r.name) { $("#rParseStatus").textContent = "Informe o nome do cliente."; return; } r.key = editing || `${r.id}-${Date.now()}`; const ix = rows.findIndex(x => x.key === r.key); if (ix >= 0) rows[ix] = r; else rows.unshift(r); save(); render(); clearForm(); };
   $("#rCancel").onclick = clearForm; $("#rSearch").oninput = render;
   $("#rTable").onclick = e => {
