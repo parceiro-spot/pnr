@@ -108,9 +108,11 @@
   const monthSort = (a, b) => a === "sem-data" ? 1 : b === "sem-data" ? -1 : b.localeCompare(a);
   const valueOf = r => r.validator && r.validator !== "— Sem validador —" ? r.validator : "";
   let openMonths = new Set(), selMonths = new Set(), previewKey = null;
-  const rowHtml = r => `<tr data-rid="${esc(r.key)}" class="${selected.has(r.key) ? "selected" : ""}${previewKey === r.key ? " previewing" : ""}"><td>${esc(fmtDate(rowDate(r))) || "—"}</td><td>${esc(r.name) || "—"}</td><td>${esc(r.phone) || "—"}</td><td><b>${esc(r.id) || "—"}</b></td><td><span class="receb-status" data-status="${esc(r.status)}">${esc(r.status)}</span></td><td>${esc(r.base) || "—"}</td><td>${esc(r.driver) || "—"}</td><td>${esc(valueOf(r)) || "—"}</td><td title="${esc(r.chat || "")}">${esc(r.receivedText || "")}</td><td><button type="button" data-edit="${esc(r.key)}">Editar</button></td></tr>`
-    + (previewKey === r.key ? `<tr class="receb-preview-row"><td colspan="10"><div class="receb-preview"><div class="receb-preview-grid"><div><small>Cliente</small><b>${esc(r.name) || "—"}</b></div><div><small>Telefone</small><b>${esc(r.phone) || "—"}</b></div><div><small>ID</small><b>${esc(r.id) || "—"}</b></div><div><small>Data</small><b>${esc(fmtDate(rowDate(r))) || "—"}</b></div><div><small>Base</small><b>${esc(r.base) || "—"}</b></div><div><small>Motorista</small><b>${esc(r.driver) || "—"}</b></div><div><small>Status</small><b>${esc(r.status) || "—"}</b></div><div><small>Validador</small><b>${esc(valueOf(r)) || "—"}</b></div></div>${conversationOf(r).length ? `<small>Conversa</small>${waChat(conversationOf(r))}` : ""}<div class="frow"><button type="button" class="pri" data-edit="${esc(r.key)}">Editar</button><button type="button" data-pclose="1">Fechar prévia</button></div></div></td></tr>` : "");
-  const tableHtml = list => `<div class="receb-table-wrap"><table class="receb-table"><thead><tr><th>Data</th><th>Cliente</th><th>Telefone</th><th>ID</th><th>Status</th><th>Base</th><th>Motorista</th><th>Validador</th><th>Confirmação WhatsApp</th><th></th></tr></thead><tbody>${list.map(rowHtml).join("")}</tbody></table></div>`;
+  // Ordem igual à planilha do Forms: A Nome · B ID · C Status · D Base · E Validador. O que não existe lá vai da coluna F em diante.
+  const valPill = v => v ? `<span class="receb-val" data-val="${esc(norm(v))}">${esc(v)}</span>` : "";
+  const rowHtml = r => `<tr data-rid="${esc(r.key)}" class="${selected.has(r.key) ? "selected" : ""}${previewKey === r.key ? " previewing" : ""}"><td class="c-nome">${esc(r.name) || "—"}</td><td class="c-id">${esc(r.id) || "—"}</td><td><span class="receb-status" data-status="${esc(r.status)}">${esc(r.status)}</span></td><td class="c-base">${esc(r.base) || "—"}</td><td>${valPill(valueOf(r))}</td><td class="c-extra">${esc(fmtDate(rowDate(r))) || "—"}</td><td class="c-extra">${esc(r.phone) || "—"}</td><td class="c-extra">${esc(r.driver) || "—"}</td><td class="c-extra" title="${esc(r.chat || "")}">${esc(r.receivedText || "")}</td><td><button type="button" data-edit="${esc(r.key)}">Editar</button></td></tr>`
+    + (previewKey === r.key ? `<tr class="receb-preview-row"><td colspan="10"><div class="receb-preview"><div class="receb-preview-grid"><div><small>Cliente</small><b>${esc(r.name) || "—"}</b></div><div><small>ID</small><b>${esc(r.id) || "—"}</b></div><div><small>Status</small><b>${esc(r.status) || "—"}</b></div><div><small>Base</small><b>${esc(r.base) || "—"}</b></div><div><small>Validador</small><b>${esc(valueOf(r)) || "—"}</b></div><div><small>Data</small><b>${esc(fmtDate(rowDate(r))) || "—"}</b></div><div><small>Telefone</small><b>${esc(r.phone) || "—"}</b></div><div><small>Motorista</small><b>${esc(r.driver) || "—"}</b></div></div>${conversationOf(r).length ? `<small>Conversa</small>${waChat(conversationOf(r))}` : ""}<div class="frow"><button type="button" class="pri" data-edit="${esc(r.key)}">Editar</button><button type="button" data-pclose="1">Fechar prévia</button></div></div></td></tr>` : "");
+  const tableHtml = list => `<div class="receb-table-wrap"><table class="receb-table"><thead><tr><th>Nome</th><th>ID</th><th>Status</th><th>Base</th><th>Validador</th><th class="h-extra">Data</th><th class="h-extra">Telefone</th><th class="h-extra">Motorista</th><th class="h-extra">Confirmação WhatsApp</th><th class="h-extra"></th></tr></thead><tbody>${list.map(rowHtml).join("")}</tbody></table></div>`;
   function updateDownloadButtons() {
     const keys = [...new Set(rows.map(monthKey))];
     selMonths = new Set([...selMonths].filter(k => keys.includes(k)));
@@ -156,10 +158,12 @@
     if (e.ctrlKey || e.metaKey) { const k = tr.dataset.rid; if (selected.has(k)) selected.delete(k); else selected.add(k); tr.classList.toggle("selected", selected.has(k)); return; }
     previewKey = previewKey === tr.dataset.rid ? null : tr.dataset.rid; render();
   };
-  const copySelected = async () => { const text = rows.filter(r => selected.has(r.key)).map(r => [fmtDate(rowDate(r)),r.name,r.phone,r.id,r.status,r.base,r.driver,r.validator,r.receivedText].join("\t")).join("\n"); if (!text) return; try { await navigator.clipboard.writeText(text); } catch (e) { const ta = document.createElement("textarea"); ta.value = text; document.body.append(ta); ta.select(); document.execCommand("copy"); ta.remove(); } };
+  const copySelected = async () => { const text = rows.filter(r => selected.has(r.key)).map(r => dlRow(r).map(x => x.replace(/[\t\r\n]+/g, " ")).join("\t")).join("\n"); if (!text) return; try { await navigator.clipboard.writeText(text); } catch (e) { const ta = document.createElement("textarea"); ta.value = text; document.body.append(ta); ta.select(); document.execCommand("copy"); ta.remove(); } };
   $("#rCopy").onclick = copySelected; document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && selected.size && !e.target.closest("input,textarea,select")) { e.preventDefault(); copySelected(); } });
-  const DL_HEAD = ["DATA","NOME","TELEFONE","ID","STATUS","BASE","MOTORISTA","VALIDADOR","CONFIRMACAO_WHATSAPP"];
-  const dlRow = r => [fmtDate(rowDate(r)), r.name, r.phone, r.id, r.status, r.base, r.driver, valueOf(r), r.receivedText].map(x => String(x ?? ""));
+  const DL_HEAD = ["NOME","ID","STATUS","BASE","VALIDADOR","DATA","TELEFONE","MOTORISTA","CONFIRMACAO_WHATSAPP"];
+  // Na planilha do Forms o validador aparece sem acento (VITORIA NASCIMENTO); sem isso a lista suspensa rejeita o valor colado.
+  const sheetVal = v => /^VIT[ÓO]RIA/i.test(v) ? norm(v) : v;
+  const dlRow = r => [r.name, r.id, r.status, r.base, sheetVal(valueOf(r)), fmtDate(rowDate(r)), r.phone, r.driver, r.receivedText].map(x => String(x ?? ""));
   const sortedMonth = k => rows.filter(r => monthKey(r) === k).sort((a, b) => rowDate(a).localeCompare(rowDate(b)) || (a.updatedAt || 0) - (b.updatedAt || 0));
   const monthFileName = keys => keys.length === 1 ? `Analise_Recebimento_${keys[0]}` : keys.length === rows.map(monthKey).filter((k, i, a) => a.indexOf(k) === i).length ? "Analise_Recebimento_todos_os_meses" : "Analise_Recebimento_meses_selecionados";
   function downloadMonths(keys, name) {
@@ -169,7 +173,7 @@
       const wb = XLSX.utils.book_new();
       keys.forEach(k => {
         const ws = XLSX.utils.aoa_to_sheet([DL_HEAD, ...sortedMonth(k).map(dlRow)]);
-        ws["!cols"] = [{ wch: 11 }, { wch: 30 }, { wch: 18 }, { wch: 14 }, { wch: 24 }, { wch: 9 }, { wch: 26 }, { wch: 22 }, { wch: 40 }];
+        ws["!cols"] = [{ wch: 30 }, { wch: 14 }, { wch: 24 }, { wch: 9 }, { wch: 22 }, { wch: 11 }, { wch: 18 }, { wch: 26 }, { wch: 40 }];
         XLSX.utils.book_append_sheet(wb, ws, monthLabel(k).replace(/[\\/?*[\]:]/g, "-").slice(0, 31));
       });
       XLSX.writeFile(wb, `${name}.xlsx`);

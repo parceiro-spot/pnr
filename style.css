@@ -275,3 +275,25 @@ body.dates-hidden .date-field,body.dates-hidden .date-context{color:#7b8581!impo
 [data-theme="dark"] .wa-chat{background:#0b141a}[data-theme="dark"] .wa-own{background:#005c4b;color:#e9edef}[data-theme="dark"] .wa-client{background:#202c33;color:#e9edef}[data-theme="dark"] .wa-meta span{color:#8696a0}
 
 .receb-preview .wa-chat{max-height:none}
+
+/* ===== Análise Recebimento no formato da planilha do Forms (A–E) + extras (F em diante) ===== */
+.receb-table{min-width:1100px}
+.receb-table th{text-align:center}.receb-table th.h-extra{background:#6b7573}
+.receb-table td{text-align:center;vertical-align:middle}
+.receb-table tbody tr:nth-child(even) td{background:#e1f4f8}
+:root[data-theme="dark"] .receb-table tbody tr:nth-child(even) td{background:#1d2c30}
+.receb-table tr.selected td{background:#d8f1df!important}.receb-table tr.previewing td{background:#eef6f3!important}
+.receb-table td.c-nome{font-weight:700}.receb-table td.c-id{font-weight:700;font-variant-numeric:tabular-nums}.receb-table td.c-base{font-weight:700}
+.receb-table td:nth-child(6),.receb-table th:nth-child(6){border-left:3px solid var(--ln)}
+.receb-table td.c-extra{font-size:12.5px;color:var(--mu)}
+.receb-table td:nth-child(9){text-align:left}
+.receb-status,.receb-val{display:block;width:100%;min-width:190px;text-align:center;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:800;letter-spacing:.02em;text-transform:uppercase}
+.receb-status{background:#c9a000;color:#fff}
+.receb-status[data-status="ANULADA"]{background:#1e7e4f;color:#b9f3cf}
+.receb-status[data-status="COMPROVANTE CARREGADO"]{background:#e535d0;color:#ffd6fb}
+.receb-val{background:#e5e7e6;color:#26322f}
+.receb-val[data-val="KETHELLY OLIVEIRA"]{background:#5b2f91;color:#f1e3ff}
+.receb-val[data-val="VITORIA NASCIMENTO"]{background:#d9a3f0;color:#1d1d1d}
+.receb-val[data-val="VITOR MENDES"]{background:#3a3a3a;color:#e8e8e8}
+.receb-val[data-val="LUIZA FRANCA"]{background:#fbd0d0;color:#b3261e}
+.receb-val[data-val="EDUARDA CARVALHO"]{background:#6a45a8;color:#fff}

@@ -2,7 +2,7 @@
 <html lang="pt-BR"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Análise PNR</title>
-<link rel="stylesheet" href="style.css?v=20261117e">
+<link rel="stylesheet" href="style.css?v=20261118a">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -41,7 +41,7 @@ Tudo bem? Espero que sim!
 ID: 12345678901
 Consta uma informação em nosso sistema que não recebeu.
 [09:01, 17/11/2026] +55 21 99999-1234: Ja recebi o produto</pre><p class="mu">Copie a conversa do jeito que o WhatsApp entrega, com horário e quem enviou. O site usa só a 1ª mensagem (“Prezado cliente…”), pega o <b>ID</b> e o <b>nome</b> dela e o <b>telefone</b> de quem respondeu.</p></details><div class="frow"><button id="rParse" class="pri" type="button">Identificar e preencher</button><button id="rClearMessage" type="button">Limpar</button></div><div id="rParseStatus" class="mu"></div><div class="receb-msg-head"><b>Mensagem do WhatsApp (só a primeira)</b><button id="rMsgEdit" type="button" class="mini" title="Editar o texto da mensagem">✎ Editar texto</button></div><div id="rMessageView"></div><textarea id="rMessage" rows="6" hidden></textarea></div>
-  <div class="card receb-fields"><h2>Campos preenchidos</h2><div class="receb-form-grid"><label>Nome do cliente<input id="rName" type="text"></label><label>Telefone<input id="rPhone" type="text" placeholder="(00) 00000-0000"></label><label>ID do pacote<input id="rId" type="text" inputmode="numeric"></label><label>Base<input id="rBase" type="text" placeholder="Ex.: SMG3"></label><label>Motorista<input id="rDriver" type="text"></label><label>Data<input id="rDate" type="date" title="Já vem com a data de hoje; clique para editar"></label><label>Status<select id="rStatus"></select></label><label class="receb-val-field">Validador<span class="receb-val-row"><select id="rValidator"></select><button id="rValAdd" type="button" title="Adicionar nome de validador">＋</button><button id="rValDel" type="button" title="Excluir o validador selecionado da lista">🗑</button></span></label></div><div class="frow"><button id="rSave" class="pri" type="button">Salvar recebimento</button><button id="rCancel" type="button">Cancelar</button></div></div>
+  <div class="card receb-fields"><h2>Campos preenchidos</h2><div class="receb-form-grid"><label>Nome do cliente<input id="rName" type="text"></label><label>ID do pacote<input id="rId" type="text" inputmode="numeric"></label><label>Status<select id="rStatus"></select></label><label>Base<input id="rBase" type="text" placeholder="Ex.: SMG3"></label><label class="receb-val-field">Validador<span class="receb-val-row"><select id="rValidator"></select><button id="rValAdd" type="button" title="Adicionar nome de validador">＋</button><button id="rValDel" type="button" title="Excluir o validador selecionado da lista">🗑</button></span></label><label>Telefone<input id="rPhone" type="text" placeholder="(00) 00000-0000"></label><label>Motorista<input id="rDriver" type="text"></label><label>Data<input id="rDate" type="date" title="Já vem com a data de hoje; clique para editar"></label></div><div class="frow"><button id="rSave" class="pri" type="button">Salvar recebimento</button><button id="rCancel" type="button">Cancelar</button></div></div>
 </div>
 <div class="receb-toolbar"><div><b>Recebimentos registrados</b><span id="rCount" class="mu"></span></div><input id="rSearch" type="search" placeholder="Buscar nome, ID, base ou motorista"><button id="rCopy" type="button">⧉ Copiar selecionados</button></div>
 <div class="receb-dl-bar"><b>Arquivos por mês</b><button id="rSelAll" type="button">☑ Marcar todos os meses</button><button id="rDlSel" type="button" disabled>⬇ Baixar selecionados (0)</button><button id="rDlAll" type="button" class="pri">⬇ Baixar tudo (todos os meses)</button></div>
@@ -109,7 +109,7 @@ Consta uma informação em nosso sistema que não recebeu.
 <div id="dlInfo" class="msg"></div>
 <div class="frow"><button id="dlXlsx" class="pri">⬇ Baixar .xlsx com carimbo completo</button><button id="dlCopy">⧉ Copiar a partir do Validador</button><button id="dlClose">Fechar ✕</button></div>
 </div></div>
-<script src="script.js?v=20261117e"></script>
-<script src="forms.js?v=20261117e"></script>
-<script src="recebimento.js?v=20261117e"></script>
+<script src="script.js?v=20261118a"></script>
+<script src="forms.js?v=20261118a"></script>
+<script src="recebimento.js?v=20261118a"></script>
 </body></html>
